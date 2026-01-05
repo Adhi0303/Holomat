@@ -1,0 +1,45 @@
+/* Panel Component */
+.panel {
+    background: rgba(10, 20, 40, 0.6);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.1);
+    transition: all 0.3s ease;
+}
+
+.panel:hover {
+    border-color: rgba(0, 212, 255, 0.5);
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.2);
+}
+
+.panel-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-md);
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+}
+
+.panel-icon {
+    color: var(--color-primary);
+    font-size: var(--text-xl);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.panel-title {
+    font-family: var(--font-display);
+    font-size: var(--text-base);
+    color: var(--color-primary);
+    letter-spacing: 0.1em;
+    margin: 0;
+    text-transform: uppercase;
+}
+
+.panel-content {
+    color: var(--color-text-secondary);
+}

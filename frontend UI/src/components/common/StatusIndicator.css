@@ -1,0 +1,65 @@
+/* StatusIndicator Component */
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.status-indicator__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    position: relative;
+}
+
+.status-indicator__dot::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.2;
+}
+
+.status-indicator__dot--active {
+    background: var(--color-success);
+    box-shadow: 0 0 10px var(--color-success);
+}
+
+.status-indicator__dot--inactive {
+    background: var(--color-text-muted);
+    box-shadow: 0 0 5px var(--color-text-muted);
+}
+
+.status-indicator__dot--warning {
+    background: #ffaa00;
+    box-shadow: 0 0 10px #ffaa00;
+}
+
+.status-indicator__dot--error {
+    background: var(--color-error);
+    box-shadow: 0 0 10px var(--color-error);
+}
+
+.status-indicator__dot.pulsing {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.7;
+        transform: scale(1.2);
+    }
+}
+
+.status-indicator__label {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
