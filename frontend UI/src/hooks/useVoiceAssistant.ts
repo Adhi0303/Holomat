@@ -33,9 +33,14 @@ interface SpeechRecognition extends EventTarget {
     stop(): void
     abort(): void
     onresult: ((event: SpeechRecognitionEvent) => void) | null
-    onerror: ((event: Event) => void) | null
+    onerror: ((event: SpeechRecognitionErrorEvent) => void) | null
     onend: (() => void) | null
     onstart: (() => void) | null
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+    error: string
+    message: string
 }
 
 declare global {
@@ -145,7 +150,7 @@ export function useVoiceAssistant() {
         }
 
         const recognition = new SpeechRecognition()
-        recognition.continuous = false
+        recognition.continuous = true  // Keep listening
         recognition.interimResults = true
         recognition.lang = 'en-US'
 
@@ -172,19 +177,39 @@ export function useVoiceAssistant() {
 
             if (finalTranscript) {
                 setLastCommand(finalTranscript)
+                recognition.stop()
                 processCommand(finalTranscript)
             }
         }
 
-        recognition.onerror = (event: Event) => {
-            console.error('🎤 Speech recognition error:', event)
+        recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+            console.error('🎤 Speech recognition error:', event.error)
+
+            // Handle different error types
+            switch (event.error) {
+                case 'no-speech':
+                    console.log('🎤 No speech detected, still listening...')
+                    return
+                case 'network':
+                    console.warn('🎤 Network error - retrying...')
+                    setTimeout(() => {
+                        if (recognitionRef.current) {
+                            try { recognitionRef.current.start() } catch (e) { console.error(e) }
+                        }
+                    }, 1000)
+                    return
+                case 'aborted':
+                    return
+            }
+
             setIsListening(false)
             setJarvisState('idle')
         }
 
         recognition.onend = () => {
-            setIsListening(false)
+            console.log('🎤 Recognition ended')
             if (!isSpeaking) {
+                setIsListening(false)
                 setJarvisState('idle')
             }
         }
@@ -197,17 +222,31 @@ export function useVoiceAssistant() {
         }
     }, [setJarvisState, setLastCommand, isSpeaking])
 
-    // Process voice command
-    const processCommand = useCallback((command: string) => {
+    // Process voice command using Groq AI
+    const processCommand = useCallback(async (command: string) => {
         setJarvisState('processing')
         console.log(`🤖 Processing: "${command}"`)
 
-        // Simulate processing delay
-        setTimeout(() => {
-            const response = parseCommand(command)
+        try {
+            const { chat, isConfigured } = await import('../services/aiService')
+
+            if (!isConfigured()) {
+                console.warn('⚠️ AI not configured, using fallback')
+                const fallback = parseCommand(command)
+                setLastResponse(`"${fallback}"`)
+                speak(fallback)
+                return
+            }
+
+            const response = await chat(command)
             setLastResponse(`"${response}"`)
             speak(response)
-        }, 500)
+        } catch (error) {
+            console.error('AI error:', error)
+            const fallback = "I'm experiencing a temporary disruption, sir."
+            setLastResponse(`"${fallback}"`)
+            speak(fallback)
+        }
     }, [setJarvisState, setLastResponse])
 
     // Text-to-Speech
