@@ -1,659 +1,479 @@
-# HoloMat - Pending Modules for Team Assignment
+# HoloMat - Pending Modules (Software-First Priority)
 
 **Last Updated:** January 8, 2026  
-**Project Status:** Frontend ~70% complete, Backend 0%, Hardware 0%
+**Priority:** Software features first → Hardware sensors later
 
 ---
 
-## Quick Reference
+## Priority Overview
 
-| Module | Status | Complexity | Assignee |
-|--------|--------|------------|----------|
-| 1. PIR Proximity Sensor | 🔴 Not Started | Easy | ________ |
-| 2. LDR Light Sensor | 🔴 Not Started | Medium | ________ |
-| 3. Gesture Control | 🔴 Not Started | Hard | ________ |
-| 4. Face Authentication | 🟡 Partial (Frontend Mock) | Hard | ________ |
-| 5. AI Voice Assistant | 🟡 Partial (Browser TTS) | Medium | ________ |
-| 6. LCD Display | 🔴 Not Started | Medium | ________ |
-| 7. LED Lighting | 🔴 Not Started | Medium | ________ |
-| 8. 3D Hologram | 🟢 Mostly Done | Easy | ________ |
-| 9. Backend API Server | 🔴 Not Started | Hard | ________ |
-| 10. Frontend UI | 🟢 Mostly Done | Easy | ________ |
+| Priority | Phase | Modules |
+|----------|-------|---------|
+| **P1** | Core Software | Backend API, Frontend WebSocket, Dashboard |
+| **P2** | 3D & Visualization | 3D File Rendering, Blender/Unity Integration, Real-time Camera 3D |
+| **P3** | AI & Voice | Jarvis Enhancements, Voice Commands, AI Actions |
+| **P4** | Hardware | Sensors (PIR, LDR, Ultrasonic), LCD, LED |
 
 ---
 
-## What's Already Implemented ✅
-
-### Frontend UI (Module 10)
-- ✅ React + Vite + TypeScript project
-- ✅ Iron Man themed CSS (variables, animations)
-- ✅ 3D Hologram viewer (Three.js + React Three Fiber)
-- ✅ Zustand state management
-- ✅ Voice assistant hook (Web Speech API)
-- ✅ Face detection hook (TensorFlow.js mock)
-- ✅ Screens: Standby, Scanning, Welcome
-- ✅ Components: Header, JarvisPanel, SensorStatus, SystemStats
-- ✅ Groq AI integration for Jarvis responses
-
-### What's Missing
-- ❌ WebSocket connection to backend
-- ❌ Dashboard screen
-- ❌ Settings screen
-- ❌ Real sensor data (currently mocked)
+# PHASE 1: Core Software (HIGH PRIORITY)
 
 ---
 
-## 🔴 MODULE 1: PIR Proximity Sensor
+## 1.1 Backend API Server
 
-### Status: Not Started
+### Status: 🔴 Not Started | Priority: CRITICAL
 
 ### What Needs to Be Done
-Create a Python module that detects motion using the HC-SR501 PIR sensor and triggers the system wake-up sequence.
-
-### Hardware Requirements
-| Component | Pins |
-|-----------|------|
-| HC-SR501 PIR Sensor | GPIO 4 |
-
-### Tasks
-1. **Wire the PIR sensor** to Raspberry Pi GPIO 4
-2. **Create Python module** `src/sensors/pir_motion.py`
-3. **Implement PIRSensor class** with:
-   - `start_monitoring()` - Begin motion detection loop
-   - `on_motion_detected(callback)` - Trigger callback when motion detected
-   - `set_cooldown(seconds)` - Prevent repeated triggers
-4. **Test with LED** - Make LED turn on when motion detected
-5. **Integrate with backend** - Send motion event via queue
-
-### File to Create
-```
-backend/src/sensors/pir_motion.py
-```
-
-### Dependencies
-```bash
-pip install RPi.GPIO gpiozero
-```
-
-### Acceptance Criteria
-- [ ] Motion detected within 2-7 meters
-- [ ] Callback fired within 100ms of motion
-- [ ] Cooldown prevents rapid re-triggering
-- [ ] Events logged to console
-
-### Reference Code
-```python
-from gpiozero import MotionSensor
-from signal import pause
-
-pir = MotionSensor(4)
-
-def on_motion():
-    print("Motion detected!")
-
-pir.when_motion = on_motion
-pause()
-```
-
----
-
-## 🔴 MODULE 2: LDR Ambient Light Sensor
-
-### Status: Not Started
-
-### What Needs to Be Done
-Read ambient light levels using an LDR sensor with MCP3008 ADC and auto-adjust display/LED brightness.
-
-### Hardware Requirements
-| Component | Pins |
-|-----------|------|
-| LDR + 10kΩ Resistor | MCP3008 CH0 |
-| MCP3008 ADC | SPI0 (GPIO 8,9,10,11) |
-
-### Tasks
-1. **Wire MCP3008** to SPI bus with LDR on Channel 0
-2. **Enable SPI** on Raspberry Pi (`sudo raspi-config`)
-3. **Create Python module** `src/sensors/light_sensor.py`
-4. **Implement LightSensor class** with:
-   - `read_raw()` - Get raw ADC value (0-1023)
-   - `read_percentage()` - Convert to 0-100%
-   - `get_brightness_level()` - Return "low", "medium", "high"
-   - `on_change(callback, threshold)` - Fire when light changes
-5. **Integrate with LED module** for auto-brightness
-
-### File to Create
-```
-backend/src/sensors/light_sensor.py
-```
-
-### Dependencies
-```bash
-pip install spidev
-```
-
-### Acceptance Criteria
-- [ ] ADC reads 0-1023 values
-- [ ] Brightness mapped to 3 levels
-- [ ] Smooth transitions (no flicker)
-- [ ] Updates sent every 500ms
-
-### Wiring Diagram
-```
-LDR ──┬── 3.3V
-      │
-      ├── MCP3008 CH0
-      │
-     10kΩ
-      │
-     GND
-```
-
----
-
-## 🔴 MODULE 3: Gesture Control System
-
-### Status: Not Started
-
-### What Needs to Be Done
-Enable touchless UI navigation using 3 ultrasonic sensors to detect swipe, push, and pull gestures.
-
-### Hardware Requirements
-| Sensor | Trigger Pin | Echo Pin |
-|--------|-------------|----------|
-| Left | GPIO 17 | GPIO 27 |
-| Center | GPIO 22 | GPIO 23 |
-| Right | GPIO 24 | GPIO 25 |
-
-### Tasks
-1. **Wire 3 HC-SR04 sensors** in left-center-right arrangement
-2. **Create UltrasonicSensor class** - Read distance from single sensor
-3. **Create GestureDetector class** - Combine all 3 sensors
-4. **Implement gesture recognition:**
-   - Swipe Left: S1→S2→S3 trigger in sequence
-   - Swipe Right: S3→S2→S1 trigger in sequence
-   - Push: Decreasing distance on center sensor
-   - Pull: Increasing distance on center sensor
-5. **Send gestures to backend** via event queue
-
-### Files to Create
-```
-backend/src/sensors/ultrasonic.py
-backend/src/sensors/gesture_detector.py
-```
-
-### Dependencies
-```bash
-pip install gpiozero
-```
-
-### Gesture Detection Logic
-```python
-# Swipe Left: Objects pass Left → Center → Right
-# Within 500ms window, if all 3 sensors triggered in order
-
-# Push: Center sensor distance decreases rapidly
-# Pull: Center sensor distance increases rapidly
-```
-
-### Acceptance Criteria
-- [ ] Distance accurate within ±2cm
-- [ ] Gestures detected with >90% accuracy
-- [ ] Response time <200ms
-- [ ] No false positives from ambient movement
-
----
-
-## 🟡 MODULE 4: Face Authentication System
-
-### Status: Partial (Frontend has TensorFlow.js mock)
-
-### What Needs to Be Done
-Implement server-side face recognition using OpenCV for user authentication.
-
-### Hardware Requirements
-| Component | Connection |
-|-----------|------------|
-| USB Webcam 1080p | USB Port |
-
-### Current Implementation
-- Frontend has `useFaceDetection.ts` using TensorFlow.js (browser-based)
-- This is for demo only, needs server-side for real authentication
-
-### Tasks
-1. **Set up USB camera** on Raspberry Pi
-2. **Create CameraManager class** - Handle video capture
-3. **Create FaceAuthenticator class** with:
-   - `register_user(name, frames[])` - Store face encoding
-   - `authenticate(frame)` - Match face to database
-   - `get_known_users()` - List registered users
-   - `delete_user(name)` - Remove user
-4. **Create user database** (SQLite) for face encodings
-5. **API endpoint** for authentication status
-
-### Files to Create
-```
-backend/src/vision/camera_manager.py
-backend/src/vision/face_authenticator.py
-backend/database/users.db (SQLite)
-```
-
-### Dependencies
-```bash
-pip install opencv-python face-recognition numpy
-```
-
-### Database Schema
-```sql
-CREATE TABLE users (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    face_encoding BLOB NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Acceptance Criteria
-- [ ] Face detected within 5 seconds
-- [ ] Recognition accuracy >95%
-- [ ] Multiple users supported
-- [ ] Unknown faces rejected
-
----
-
-## 🟡 MODULE 5: AI Voice Assistant (Jarvis)
-
-### Status: Partial (Frontend Groq integration done)
-
-### What Needs to Be Done
-Add server-side wake word detection and text-to-speech using Python.
-
-### Current Implementation
-- ✅ Frontend uses Web Speech API for STT/TTS
-- ✅ Groq AI integration for responses
-- ❌ No wake word detection ("Hey Jarvis")
-- ❌ No server-side TTS (browser-dependent)
-
-### Tasks
-1. **Add wake word detection** using Porcupine or Snowboy
-2. **Server-side TTS** using pyttsx3 or Edge TTS
-3. **Audio playback** through 3.5mm speaker
-4. **Command parsing** for system actions
-5. **API endpoint** for voice commands
-
-### Files to Create
-```
-backend/src/ai/speech_to_text.py
-backend/src/ai/text_to_speech.py
-backend/src/ai/wake_word.py
-```
-
-### Dependencies
-```bash
-pip install pyttsx3 pvporcupine edge-tts pyaudio
-```
-
-### System Actions to Implement
-| Command | Action |
-|---------|--------|
-| "dim the lights" | LED brightness 30% |
-| "bright mode" | LED brightness 100% |
-| "change model to sphere" | Frontend model change |
-| "what's my CPU usage" | Read system stats |
-| "goodnight" | System standby |
-
-### Acceptance Criteria
-- [ ] Wake word detected >90% accuracy
-- [ ] Response latency <3 seconds
-- [ ] TTS audible through speaker
-- [ ] System commands executed
-
----
-
-## 🔴 MODULE 6: LCD Notification Display
-
-### Status: Not Started
-
-### What Needs to Be Done
-Display time, date, weather, and system status on two I2C LCD panels.
-
-### Hardware Requirements
-| Component | I2C Address | Pins |
-|-----------|-------------|------|
-| LCD Panel 1 | 0x27 | SDA/SCL (GPIO 2/3) |
-| LCD Panel 2 | 0x3F | SDA/SCL (GPIO 2/3) |
-
-### Tasks
-1. **Wire LCD panels** to I2C bus (parallel connection)
-2. **Enable I2C** on Raspberry Pi (`sudo raspi-config`)
-3. **Create LCDManager class** with:
-   - `write_line(panel, line, text)` - Write to specific line
-   - `clear(panel)` - Clear display
-   - `show_time()` - Display current time/date
-   - `show_status(cpu, ram, temp)` - Show system stats
-   - `show_notification(message, duration)` - Temporary message
-4. **Scrolling text** for long messages
-5. **Integration with backend** for real-time updates
-
-### File to Create
-```
-backend/src/display/lcd_panels.py
-```
-
-### Dependencies
-```bash
-pip install RPLCD smbus2
-```
-
-### Display Layout
-**Panel 1 (Time):**
-```
-┌────────────────────┐
-│ 20:54    SUN       │
-│ December 29, 2024  │
-│ Chennai   28°C     │
-│ Partly Cloudy      │
-└────────────────────┘
-```
-
-**Panel 2 (Status):**
-```
-┌────────────────────┐
-│ CPU: 45%  MEM: 62% │
-│ Temp: 52°C         │
-│ User: Suriya       │
-│ Status: ACTIVE     │
-└────────────────────┘
-```
-
-### Acceptance Criteria
-- [ ] Both LCDs addressable
-- [ ] Time updates every second
-- [ ] System stats update every 5 seconds
-- [ ] Custom characters for icons
-
----
-
-## 🔴 MODULE 7: Ambient LED Lighting
-
-### Status: Not Started
-
-### What Needs to Be Done
-Control WS2812B RGB LED strip for Iron Man aesthetic lighting effects.
-
-### Hardware Requirements
-| Component | Pins |
-|-----------|------|
-| WS2812B LED Strip (60 LEDs) | GPIO 18 (PWM) |
-| Level Shifter (3.3V→5V) | Between Pi and LEDs |
-| 5V 3A Power Supply | External |
-
-### Tasks
-1. **Wire LED strip** with level shifter to GPIO 18
-2. **Create LEDController class** with:
-   - `set_color(r, g, b)` - Set all LEDs to color
-   - `set_mode(mode_name)` - Apply preset mode
-   - `pulse(color, speed)` - Breathing effect
-   - `wave(colors[], speed)` - Moving color wave
-   - `set_brightness(level)` - 0-100%
-3. **Implement modes:**
-   - Idle: Slow blue pulse
-   - Active: Steady cyan glow
-   - Alert: Orange flash
-   - Voice: Audio-reactive
-   - Loading: Rotating animation
-4. **Integration with LDR** for auto-brightness
-
-### File to Create
-```
-backend/src/display/led_controller.py
-```
-
-### Dependencies
-```bash
-sudo pip install rpi_ws281x adafruit-circuitpython-neopixel
-```
-
-### Color Palette
-```python
-COLORS = {
-    "arc_blue": (0, 212, 255),
-    "gold": (255, 215, 0),
-    "alert_orange": (255, 107, 0),
-    "success_green": (0, 255, 136),
-}
-```
-
-### Acceptance Criteria
-- [ ] All 60 LEDs individually addressable
-- [ ] Smooth animations at 60 FPS
-- [ ] Brightness responds to LDR
-- [ ] Multiple modes work correctly
-
----
-
-## 🟢 MODULE 8: 3D Hologram Visualization
-
-### Status: Mostly Complete
-
-### What's Done
-- ✅ Three.js scene with hologram rendering
-- ✅ Multiple 3D models (Cube, Sphere, Torus, ArcReactor)
-- ✅ Grid floor and particle effects
-- ✅ Holographic material/shaders
-- ✅ Model selector UI
-
-### What's Remaining
-1. **Gesture-based rotation** - Connect to ultrasonic sensors
-2. **Load custom 3D models** - GLTF/OBJ file support
-3. **Build physical hologram frame**:
-   - 45° acrylic sheet
-   - Projector/monitor mounting
-   - Frame construction
-
-### Files Implemented
-```
-frontend UI/src/components/HologramScene.tsx
-frontend UI/src/components/HologramViewer.tsx
-```
-
-### Physical Setup Task
-```
-      [MONITOR/PROJECTOR]
-              │
-              ▼
-        ┌──────────┐
-        │  45°     │ ← Acrylic/Glass Sheet
-        │   /      │
-        └──────────┘
-              │
-         [VIEWING AREA]
-```
-
-### Acceptance Criteria
-- [ ] Physical frame built
-- [ ] Pepper's Ghost effect working
-- [ ] Gestures rotate 3D model
-- [ ] Custom models loadable
-
----
-
-## 🔴 MODULE 9: Backend API Server
-
-### Status: Not Started (CRITICAL - Blocking Other Modules)
-
-### What Needs to Be Done
-Create the FastAPI backend that orchestrates all modules and communicates with frontend.
+Create FastAPI backend that serves as the central hub for all communication.
 
 ### Tasks
 1. **Set up FastAPI project** structure
-2. **Create REST API endpoints:**
+2. **REST API endpoints:**
    - `GET /api/status` - System health
-   - `GET /api/sensors` - All sensor readings
-   - `GET /api/user` - Current authenticated user
-   - `POST /api/led/mode` - Change LED mode
-   - `POST /api/jarvis/command` - Send voice command
-3. **Implement WebSocket** for real-time data:
-   - `WS /ws` - Bidirectional event stream
-4. **Multiprocessing** for parallel tasks:
-   - Sensor Process (Core 1)
-   - Vision Process (Core 2)
-   - AI Process (Core 3)
-5. **Inter-process communication** using queues
+   - `GET /api/sensors` - Sensor data (mock first)
+   - `GET /api/user` - Current user
+   - `POST /api/hologram/model` - Change 3D model
+   - `POST /api/jarvis/command` - Voice command
+3. **WebSocket server** for real-time updates
+4. **Database** (SQLite) for users and settings
 
-### Project Structure
+### File Structure
 ```
 backend/
-├── main.py              # Entry point
-├── config.py            # Settings
-├── requirements.txt     # Dependencies
+├── main.py
+├── config.py
+├── requirements.txt
 ├── api/
-│   ├── routes.py        # REST endpoints
-│   └── websocket.py     # WS handlers
-├── processes/
-│   ├── sensor_process.py
-│   ├── vision_process.py
-│   └── ai_process.py
-├── src/
-│   ├── sensors/         # Modules 1-3
-│   ├── vision/          # Module 4
-│   ├── ai/              # Module 5
-│   └── display/         # Modules 6-7
+│   ├── routes.py
+│   └── websocket.py
 └── database/
-    └── users.db         # SQLite
+    └── db.py
 ```
 
 ### Dependencies
 ```bash
-pip install fastapi uvicorn websockets python-multipart pydantic
+pip install fastapi uvicorn websockets python-multipart pydantic sqlite3
 ```
 
-### WebSocket Event Types
-```json
-{
-    "type": "motion_detected",
-    "data": {"timestamp": 1234567890}
-}
-
-{
-    "type": "gesture",
-    "data": {"gesture": "swipe_left"}
-}
-
-{
-    "type": "face_recognized",
-    "data": {"user": "Suriya", "confidence": 0.98}
-}
-```
-
-### Acceptance Criteria
-- [ ] FastAPI server runs on Pi
-- [ ] All REST endpoints working
-- [ ] WebSocket connection from frontend
-- [ ] Multiprocessing utilizes all 4 cores
-- [ ] 24+ hours stable uptime
+### Assignee: __________ | Est. Time: 3-4 days
 
 ---
 
-## 🟢 MODULE 10: Frontend User Interface
+## 1.2 Frontend WebSocket Client
 
-### Status: Mostly Complete
+### Status: 🔴 Not Started | Priority: HIGH
 
-### What's Done
-- ✅ React + Vite + TypeScript
-- ✅ Iron Man CSS theme
-- ✅ 3D Hologram viewer (Three.js)
-- ✅ Voice assistant UI (JarvisPanel)
-- ✅ State management (Zustand)
-- ✅ Screens: Standby, Scanning, Welcome
-- ✅ Components: SensorStatus, SystemStats, UserProfile
+### What Needs to Be Done
+Connect frontend to backend via WebSocket for real-time data.
 
-### What's Remaining
-1. **WebSocket client** - Connect to backend
-2. **Dashboard screen** - Main control center
-3. **Settings screen** - User preferences
-4. **Real sensor data** - Replace mock data
+### Tasks
+1. **Create `useWebSocket.ts` hook**
+2. **Connect to `ws://localhost:8000/ws`**
+3. **Handle events:** sensor updates, gestures, user changes
+4. **Replace mock data** with real WebSocket data
+5. **Auto-reconnect** on connection loss
 
-### Files to Modify
+### File to Create
 ```
-frontend UI/src/hooks/useWebSocket.ts (CREATE)
-frontend UI/src/screens/DashboardScreen.tsx (CREATE)
-frontend UI/src/screens/SettingsScreen.tsx (CREATE)
+frontend UI/src/hooks/useWebSocket.ts
 ```
 
-### WebSocket Hook Implementation
+### Code Example
 ```typescript
-// useWebSocket.ts
 export function useWebSocket() {
-    const [socket, setSocket] = useState<WebSocket | null>(null)
-    const { updateSensor, setUser } = useAppStore()
+    const [connected, setConnected] = useState(false)
+    const ws = useRef<WebSocket | null>(null)
 
     useEffect(() => {
-        const ws = new WebSocket('ws://localhost:8000/ws')
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data)
-            // Handle different event types
-        }
-        setSocket(ws)
+        ws.current = new WebSocket('ws://localhost:8000/ws')
+        ws.current.onopen = () => setConnected(true)
+        ws.current.onmessage = (e) => handleEvent(JSON.parse(e.data))
+        return () => ws.current?.close()
     }, [])
 }
 ```
 
-### Acceptance Criteria
-- [ ] WebSocket connected to backend
-- [ ] Real sensor data displayed
-- [ ] All screens navigable
-- [ ] Responsive on different devices
+### Assignee: __________ | Est. Time: 1-2 days
 
 ---
 
-## Implementation Priority Order
+## 1.3 Dashboard Screen
 
-| Priority | Module | Reason | Estimated Time |
-|----------|--------|--------|----------------|
-| **1** | Module 9: Backend | Foundation for all other modules | 3-4 days |
-| **2** | Module 1: PIR | Simple, validates GPIO setup | 1 day |
-| **3** | Module 2: LDR | Tests SPI/ADC communication | 1 day |
-| **4** | Module 6: LCD | Visual feedback for debugging | 1-2 days |
-| **5** | Module 7: LED | Aesthetic feedback | 1-2 days |
-| **6** | Module 3: Gesture | More complex sensor integration | 2-3 days |
-| **7** | Module 4: Face | Vision processing | 2-3 days |
-| **8** | Module 5: Jarvis | AI integration | 2 days |
-| **9** | Module 8: Hologram | Physical construction | 1-2 days |
-| **10** | Module 10: Frontend | Final integration | 1-2 days |
+### Status: 🔴 Not Started | Priority: HIGH
 
----
+### What Needs to Be Done
+Create the main control center screen for the HoloMat UI.
 
-## Team Assignment Template
+### Tasks
+1. **Create `DashboardScreen.tsx`**
+2. **Layout sections:**
+   - 3D Hologram viewer (center)
+   - Sensor status panel (left)
+   - Jarvis panel (bottom)
+   - Quick actions menu (right)
+3. **Integrate with state** (Zustand)
+4. **Responsive design** for different screens
 
-Copy this section and assign each module to a team member:
-
+### File to Create
 ```
-TEAM ASSIGNMENTS
-================
-
-Module 1 (PIR Sensor):      __________________
-Module 2 (LDR Sensor):      __________________
-Module 3 (Gesture):         __________________
-Module 4 (Face Auth):       __________________
-Module 5 (AI Jarvis):       __________________
-Module 6 (LCD Display):     __________________
-Module 7 (LED Lighting):    __________________
-Module 8 (Hologram):        __________________
-Module 9 (Backend API):     __________________ (Critical!)
-Module 10 (Frontend):       __________________
+frontend UI/src/screens/DashboardScreen.tsx
 ```
 
+### Assignee: __________ | Est. Time: 2 days
+
 ---
 
-## Communication Channels
+## 1.4 Gesture Control (Software)
 
-For each module, report progress on:
-- [ ] Hardware wiring complete
-- [ ] Python module created
-- [ ] Unit tests passing
-- [ ] Integrated with backend
-- [ ] Documentation updated
+### Status: 🟡 Partial | Priority: HIGH
 
-**Git Branch Naming:** `feature/module-{number}-{short-name}`
+### What Needs to Be Done
+Implement gesture recognition logic that will later connect to ultrasonic sensors.
 
-Example: `feature/module-1-pir-sensor`
+### Current State
+- Frontend has placeholder for gesture events
+- No gesture detection algorithm
+
+### Tasks
+1. **Create gesture state in Zustand:**
+   ```typescript
+   gesture: 'none' | 'swipe_left' | 'swipe_right' | 'push' | 'pull'
+   ```
+2. **Create gesture handler functions:**
+   - `onSwipeLeft()` - Navigate previous
+   - `onSwipeRight()` - Navigate next
+   - `onPush()` - Select/Confirm
+   - `onPull()` - Back/Cancel
+3. **UI animations** for gesture feedback
+4. **Keyboard simulation** for testing (Arrow keys)
+5. **WebSocket handler** to receive gesture events
+
+### Files to Modify
+```
+frontend UI/src/stores/appStore.ts
+frontend UI/src/hooks/useGestures.ts (CREATE)
+```
+
+### Assignee: __________ | Est. Time: 1-2 days
+
+---
+
+# PHASE 2: 3D & Visualization (MEDIUM PRIORITY)
+
+---
+
+## 2.1 3D File Rendering System
+
+### Status: 🟡 Partial | Priority: HIGH
+
+### Current State
+- ✅ Three.js with basic shapes (Cube, Sphere, Torus)
+- ❌ Cannot load external 3D files
+
+### What Needs to Be Done
+Enable loading of custom 3D models from files.
+
+### Tasks
+1. **Add GLTFLoader** for .gltf/.glb files
+2. **Add OBJLoader** for .obj files
+3. **Create file upload UI**
+4. **Model caching** system
+5. **Auto-scaling** to fit viewport
+
+### Dependencies
+```bash
+npm install three @types/three
+```
+
+### Code Example
+```typescript
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
+
+const loader = new GLTFLoader()
+loader.load('/models/ironman.glb', (gltf) => {
+    scene.add(gltf.scene)
+})
+```
+
+### File to Modify
+```
+frontend UI/src/components/HologramScene.tsx
+frontend UI/src/components/ModelUploader.tsx (CREATE)
+```
+
+### Assignee: __________ | Est. Time: 2 days
+
+---
+
+## 2.2 Blender Integration
+
+### Status: 🔴 Not Started | Priority: MEDIUM
+
+### What Needs to Be Done
+Create a pipeline to export Blender models directly to HoloMat.
+
+### Tasks
+1. **Blender export script** - Export to GLTF with optimizations
+2. **Material conversion** - Convert to holographic shader
+3. **Animation export** - Preserve skeletal/morph animations
+4. **Hot reload** - Auto-update when file changes
+5. **Documentation** for 3D artists
+
+### File to Create
+```
+tools/blender_export.py (Blender addon)
+docs/blender-workflow.md
+```
+
+### Blender Export Settings
+```
+Format: GLTF 2.0 (.glb)
+Materials: Principled BSDF → PBR
+Animations: Bake all
+Scale: 1 unit = 1 meter
+```
+
+### Assignee: __________ | Est. Time: 2-3 days
+
+---
+
+## 2.3 Real-Time Camera 3D Rendering
+
+### Status: 🔴 Not Started | Priority: MEDIUM
+
+### What Needs to Be Done
+Create 3D visualization from camera input using depth estimation.
+
+### Options
+| Method | Tech | Requirements |
+|--------|------|--------------|
+| **NeRF/3D Gaussian** | AI-based | High GPU |
+| **Depth Camera** | Intel RealSense | Hardware |
+| **Photogrammetry** | Multiple photos | Processing time |
+| **AR.js/8th Wall** | Browser AR | Simple setup |
+
+### Tasks
+1. **Research best approach** for Pi 3B+ constraints
+2. **Camera feed integration** (already have webcam access)
+3. **Point cloud generation** from depth
+4. **Three.js point cloud renderer**
+5. **Real-time updates** at 10+ FPS
+
+### Recommended Approach for Pi
+```
+Use MediaPipe for body/hand tracking → 
+Generate 3D mesh from landmarks →
+Render in Three.js
+```
+
+### File to Create
+```
+frontend UI/src/components/CameraToMesh.tsx
+```
+
+### Assignee: __________ | Est. Time: 3-4 days
+
+---
+
+## 2.4 Unity/Unreal Integration (Optional)
+
+### Status: 🔴 Not Started | Priority: LOW
+
+### What Needs to Be Done
+Alternative to Three.js for more complex 3D scenes.
+
+### Options
+| Option | Pros | Cons |
+|--------|------|------|
+| **Unity WebGL** | Rich features | Large bundle size |
+| **Unreal Pixel Streaming** | Best graphics | Requires server |
+| **PlayCanvas** | Web-native | Less features |
+
+### Tasks (if Unity chosen)
+1. **Unity WebGL build** with HoloMat scene
+2. **JavaScript bridge** for React communication
+3. **Event system** to receive commands
+4. **Optimized shaders** for Pi
+
+### Note
+This is optional — Three.js may be sufficient for most use cases.
+
+### Assignee: __________ | Est. Time: 4-5 days
+
+---
+
+# PHASE 3: AI & Voice (MEDIUM PRIORITY)
+
+---
+
+## 3.1 Jarvis Voice Enhancements
+
+### Status: 🟡 Partial | Priority: MEDIUM
+
+### Current State
+- ✅ Web Speech API for STT/TTS
+- ✅ Groq AI for responses
+- ❌ No wake word detection
+- ❌ Limited system commands
+
+### Tasks
+1. **Wake word detection** - "Hey Jarvis" using Porcupine
+2. **Continuous listening mode** - Always ready
+3. **Audio feedback** - Chime when activated
+4. **Better TTS voice** - Edge TTS or ElevenLabs
+
+### System Commands to Add
+| Command | Action |
+|---------|--------|
+| "change model to [name]" | Switch 3D model |
+| "rotate left/right" | Rotate hologram |
+| "fullscreen" | Maximize hologram |
+| "show sensors" | Display sensor panel |
+| "take a photo" | Capture current view |
+
+### File to Modify
+```
+frontend UI/src/services/aiService.ts
+frontend UI/src/hooks/useVoiceAssistant.ts
+```
+
+### Assignee: __________ | Est. Time: 2 days
+
+---
+
+## 3.2 AI-Powered 3D Generation
+
+### Status: 🔴 Not Started | Priority: LOW
+
+### What Needs to Be Done
+Use AI to generate or modify 3D models from text prompts.
+
+### Options
+| Service | Type | Cost |
+|---------|------|------|
+| **Point-E (OpenAI)** | Text-to-3D | API |
+| **Shap-E** | Text-to-3D | Free/Open |
+| **Meshy.ai** | Text-to-3D | Paid |
+| **Stable Diffusion + 3D** | Image-to-3D | Free |
+
+### Tasks
+1. **API integration** with Shap-E or similar
+2. **Prompt input UI** in Jarvis panel
+3. **3D model conversion** to Three.js format
+4. **Loading/progress indicator**
+
+### Example Flow
+```
+User: "Hey Jarvis, create a 3D Iron Man helmet"
+→ AI generates 3D model
+→ Model loaded into hologram viewer
+```
+
+### Assignee: __________ | Est. Time: 3-4 days
+
+---
+
+# PHASE 4: Hardware Integration (LOW PRIORITY)
+
+> ⚠️ **Note:** These modules can be done AFTER all software features are working. The software should work with mock data first.
+
+---
+
+## 4.1 PIR Motion Sensor
+- **Priority:** Low (do after Phase 1-3)
+- **Purpose:** Auto wake-up when approaching
+- **Hardware:** HC-SR501 on GPIO 4
+- **Assignee:** __________ | Est. Time: 1 day
+
+---
+
+## 4.2 LDR Light Sensor
+- **Priority:** Low
+- **Purpose:** Auto brightness adjustment
+- **Hardware:** LDR + MCP3008 ADC
+- **Assignee:** __________ | Est. Time: 1 day
+
+---
+
+## 4.3 Ultrasonic Gesture Sensors
+- **Priority:** Low
+- **Purpose:** Physical gesture detection
+- **Hardware:** 3x HC-SR04 sensors
+- **Assignee:** __________ | Est. Time: 2 days
+
+---
+
+## 4.4 Face Authentication (Hardware)
+- **Priority:** Low
+- **Purpose:** User recognition on Pi camera
+- **Hardware:** USB Camera + OpenCV
+- **Assignee:** __________ | Est. Time: 2-3 days
+
+---
+
+## 4.5 LCD Display Panels
+- **Priority:** Low
+- **Purpose:** Time, status, notifications
+- **Hardware:** 2x I2C LCD 20x4
+- **Assignee:** __________ | Est. Time: 1-2 days
+
+---
+
+## 4.6 LED Strip Control
+- **Priority:** Low
+- **Purpose:** Ambient Iron Man lighting
+- **Hardware:** WS2812B on GPIO 18
+- **Assignee:** __________ | Est. Time: 1-2 days
+
+---
+
+# Team Assignment Summary
+
+| Priority | Module | Assignee | Status |
+|----------|--------|----------|--------|
+| **P1** | 1.1 Backend API | ________ | ⬜ |
+| **P1** | 1.2 WebSocket Client | ________ | ⬜ |
+| **P1** | 1.3 Dashboard Screen | ________ | ⬜ |
+| **P1** | 1.4 Gesture Control (SW) | ________ | ⬜ |
+| **P2** | 2.1 3D File Rendering | ________ | ⬜ |
+| **P2** | 2.2 Blender Integration | ________ | ⬜ |
+| **P2** | 2.3 Camera 3D Render | ________ | ⬜ |
+| **P2** | 2.4 Unity (Optional) | ________ | ⬜ |
+| **P3** | 3.1 Jarvis Enhancements | ________ | ⬜ |
+| **P3** | 3.2 AI 3D Generation | ________ | ⬜ |
+| **P4** | 4.1-4.6 Hardware | ________ | ⬜ Later |
+
+---
+
+## Recommended Team Split
+
+**Team A (Frontend/3D):**
+- Dashboard Screen
+- 3D File Rendering
+- Blender Integration
+- Camera 3D Render
+
+**Team B (Backend/AI):**
+- Backend API Server
+- WebSocket Integration
+- Jarvis Enhancements
+- AI 3D Generation
+
+**Team C (Hardware - Later):**
+- All sensor integrations
+- LCD/LED control
+
+---
+
+## Git Branch Naming
+
+```
+feature/backend-api
+feature/frontend-websocket
+feature/dashboard-screen
+feature/3d-file-loader
+feature/blender-export
+feature/camera-3d
+feature/jarvis-wake-word
+```
