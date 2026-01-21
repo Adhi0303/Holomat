@@ -130,6 +130,7 @@ export function useVoiceAssistant() {
 
     const recognitionRef = useRef<SpeechRecognition | null>(null)
     const synthesisRef = useRef<SpeechSynthesis | null>(null)
+    const [voicesLoaded, setVoicesLoaded] = useState(false)
 
     const {
         setJarvisState,
@@ -137,10 +138,11 @@ export function useVoiceAssistant() {
         setLastResponse,
     } = useAppStore()
 
-    // Initialize speech recognition
+    // Initialize speech recognition and synthesis
     useEffect(() => {
         if (typeof window === 'undefined') return
 
+        // Speech Recognition setup
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
 
         if (!SpeechRecognition) {
@@ -150,7 +152,7 @@ export function useVoiceAssistant() {
         }
 
         const recognition = new SpeechRecognition()
-        recognition.continuous = true  // Keep listening
+        recognition.continuous = true
         recognition.interimResults = true
         recognition.lang = 'en-US'
 
@@ -217,41 +219,31 @@ export function useVoiceAssistant() {
         recognitionRef.current = recognition
         synthesisRef.current = window.speechSynthesis
 
+        // Wait for voices to load
+        const loadVoices = () => {
+            const voices = synthesisRef.current?.getVoices()
+            if (voices && voices.length > 0) {
+                setVoicesLoaded(true)
+                console.log('🔊 Speech synthesis voices loaded:', voices.length)
+            }
+        }
+
+        loadVoices() // Try immediately
+        if (synthesisRef.current) {
+            synthesisRef.current.onvoiceschanged = loadVoices
+        }
+
         return () => {
             recognition.abort()
         }
     }, [setJarvisState, setLastCommand, isSpeaking])
 
-    // Process voice command using Groq AI
-    const processCommand = useCallback(async (command: string) => {
-        setJarvisState('processing')
-        console.log(`🤖 Processing: "${command}"`)
-
-        try {
-            const { chat, isConfigured } = await import('../services/aiService')
-
-            if (!isConfigured()) {
-                console.warn('⚠️ AI not configured, using fallback')
-                const fallback = parseCommand(command)
-                setLastResponse(`"${fallback}"`)
-                speak(fallback)
-                return
-            }
-
-            const response = await chat(command)
-            setLastResponse(`"${response}"`)
-            speak(response)
-        } catch (error) {
-            console.error('AI error:', error)
-            const fallback = "I'm experiencing a temporary disruption, sir."
-            setLastResponse(`"${fallback}"`)
-            speak(fallback)
-        }
-    }, [setJarvisState, setLastResponse])
-
     // Text-to-Speech
     const speak = useCallback((text: string) => {
-        if (!synthesisRef.current) return
+        if (!synthesisRef.current || !voicesLoaded) {
+            console.warn('🔊 Speech synthesis not ready or voices not loaded')
+            return
+        }
 
         // Cancel any ongoing speech
         synthesisRef.current.cancel()
@@ -266,11 +258,16 @@ export function useVoiceAssistant() {
         const preferredVoice = voices.find(voice =>
             voice.name.includes('Daniel') ||
             voice.name.includes('Alex') ||
-            voice.name.includes('Google UK English Male')
-        ) || voices.find(voice => voice.lang.startsWith('en'))
+            voice.name.includes('Google UK English Male') ||
+            voice.name.includes('Microsoft David') ||
+            voice.name.includes('Microsoft Mark')
+        ) || voices.find(voice => voice.lang.startsWith('en') && voice.name.toLowerCase().includes('male'))
 
         if (preferredVoice) {
             utterance.voice = preferredVoice
+            console.log('🔊 Using voice:', preferredVoice.name)
+        } else {
+            console.log('🔊 Using default voice')
         }
 
         utterance.onstart = () => {
@@ -285,8 +282,60 @@ export function useVoiceAssistant() {
             console.log('🔊 Jarvis finished speaking')
         }
 
-        synthesisRef.current.speak(utterance)
-    }, [setJarvisState])
+        utterance.onerror = (event) => {
+            console.error('🔊 Speech synthesis error:', event)
+            setIsSpeaking(false)
+            setJarvisState('idle')
+        }
+
+        try {
+            synthesisRef.current.speak(utterance)
+        } catch (error) {
+            console.error('🔊 Failed to speak:', error)
+            setIsSpeaking(false)
+            setJarvisState('idle')
+        }
+    }, [setJarvisState, voicesLoaded])
+
+    // Process voice command using enhanced backend
+    const processCommand = useCallback(async (command: string) => {
+        setJarvisState('processing')
+        console.log(`🤖 Processing: "${command}"`)
+
+        try {
+            // Call enhanced Jarvis backend
+            const response = await fetch('/api/jarvis/command', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ command })
+            })
+            
+            const result = await response.json()
+            console.log('🤖 Jarvis response:', result)
+            
+            // Handle mode switching if requested
+            if (result.action === 'switch_mode' && result.target_mode) {
+                console.log(`🔄 Switching to ${result.target_mode} mode`)
+                // Trigger mode switch event
+                window.dispatchEvent(new CustomEvent('jarvis-mode-switch', {
+                    detail: { mode: result.target_mode }
+                }))
+            }
+            
+            setLastResponse(`"${result.response}"`)
+            speak(result.response)
+            
+        } catch (error) {
+            console.error('🤖 Jarvis API error:', error)
+            // Fallback to local processing
+            const fallback = parseCommand(command)
+            console.log('🤖 Fallback response:', fallback)
+            setLastResponse(`"${fallback}"`)
+            speak(fallback)
+        }
+    }, [setJarvisState, setLastResponse, speak])
 
     // Start listening
     const startListening = useCallback(() => {
