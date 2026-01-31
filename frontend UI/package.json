@@ -15,10 +15,13 @@
     "@tensorflow-models/face-detection": "^1.0.3",
     "@tensorflow/tfjs": "^4.22.0",
     "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
     "framer-motion": "^12.23.26",
+    "groq-sdk": "^0.37.0",
     "lucide-react": "^0.562.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "recharts": "^3.6.0",
     "three": "^0.182.0",
     "zustand": "^5.0.9"
   },

@@ -80,11 +80,21 @@
     animation: pulse 2s ease-in-out infinite;
 }
 
+.status-indicator.offline {
+    background: var(--color-error);
+    box-shadow: 0 0 10px var(--color-error), 0 0 20px var(--color-error);
+    animation: blink 1s ease-in-out infinite;
+}
+
 .status-label {
     font-family: var(--font-display);
     font-size: var(--text-sm);
     color: var(--color-success);
     letter-spacing: 0.1em;
+}
+
+.status-label.offline {
+    color: var(--color-error);
 }
 
 .device-status {
@@ -131,10 +141,20 @@
     transition: width 0.5s ease;
 }
 
+.cpu-fill.offline {
+    background: var(--color-text-muted);
+    opacity: 0.3;
+}
+
 .cpu-value {
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     color: var(--color-primary);
+}
+
+.cpu-value.offline {
+    color: var(--color-text-muted);
+    opacity: 0.6;
 }
 
 .status-right {
@@ -168,7 +188,7 @@
 .main-container {
     flex: 1;
     display: grid;
-    grid-template-columns: 300px 1fr 280px;
+    grid-template-columns: 280px 1fr 420px;
     gap: var(--space-lg);
     min-height: 0;
     align-items: center;
@@ -209,6 +229,106 @@
     justify-content: center;
     animation: glow-pulse 2s ease-in-out infinite;
     cursor: pointer;
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+/* Voice button styles when integrated in dome core */
+.dome-core.voice-button {
+    background: radial-gradient(circle, rgba(0, 212, 255, 0.2) 0%, rgba(0, 212, 255, 0.05) 70%, transparent 100%);
+}
+
+.dome-core.voice-button:hover {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.5);
+}
+
+.dome-core.voice-button.listening {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 40px rgba(0, 245, 255, 0.6);
+    animation: glow-pulse 1s ease-in-out infinite;
+}
+
+.dome-core.voice-button.speaking {
+    border-color: var(--color-success);
+    box-shadow: 0 0 40px rgba(0, 255, 136, 0.6);
+    animation: glow-pulse 0.8s ease-in-out infinite;
+}
+
+/* Voice rings in dome center */
+.dome-core .voice-rings {
+    position: absolute;
+    inset: -15px;
+    pointer-events: none;
+}
+
+.dome-core .voice-ring {
+    position: absolute;
+    inset: 0;
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    border-radius: 50%;
+}
+
+.dome-core .voice-ring:nth-child(2) {
+    inset: -8px;
+}
+
+.dome-core .voice-ring:nth-child(3) {
+    inset: -16px;
+}
+
+.dome-core.listening .voice-ring {
+    animation: ring-expand 1.5s ease-out infinite;
+}
+
+.dome-core.listening .voice-ring:nth-child(2) {
+    animation-delay: 0.3s;
+}
+
+.dome-core.listening .voice-ring:nth-child(3) {
+    animation-delay: 0.6s;
+}
+
+/* Waveform in dome center */
+.dome-core .waveform {
+    position: absolute;
+    bottom: -25px;
+    display: flex;
+    gap: 3px;
+    align-items: flex-end;
+    height: 18px;
+}
+
+.dome-core .waveform .wave-bar {
+    width: 3px;
+    background: var(--color-accent);
+    border-radius: 2px;
+    animation: wave 0.5s ease-in-out infinite;
+}
+
+.dome-core .waveform .wave-bar:nth-child(1) {
+    height: 6px;
+    animation-delay: 0s;
+}
+
+.dome-core .waveform .wave-bar:nth-child(2) {
+    height: 12px;
+    animation-delay: 0.1s;
+}
+
+.dome-core .waveform .wave-bar:nth-child(3) {
+    height: 18px;
+    animation-delay: 0.2s;
+}
+
+.dome-core .waveform .wave-bar:nth-child(4) {
+    height: 12px;
+    animation-delay: 0.3s;
+}
+
+.dome-core .waveform .wave-bar:nth-child(5) {
+    height: 6px;
+    animation-delay: 0.4s;
 }
 
 .core-icon {
@@ -252,11 +372,11 @@
     transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 }
 
-/* Position each item manually around the circle */
+/* Position each item manually around the circle for 8 items */
 .dome-item:nth-child(4) {
     /* Scan - top left */
-    top: 15%;
-    left: 5%;
+    top: 10%;
+    left: 15%;
 }
 
 .dome-item:nth-child(5) {
@@ -268,27 +388,41 @@
 
 .dome-item:nth-child(6) {
     /* Measure - top right */
-    top: 15%;
-    right: 5%;
+    top: 10%;
+    right: 15%;
 }
 
 .dome-item:nth-child(7) {
-    /* Settings - bottom right */
-    bottom: 15%;
-    right: 5%;
+    /* Analytics - right */
+    right: 0%;
+    top: 50%;
+    transform: translateY(-50%);
 }
 
 .dome-item:nth-child(8) {
+    /* Settings - bottom right */
+    bottom: 10%;
+    right: 15%;
+}
+
+.dome-item:nth-child(9) {
     /* Export - bottom */
     bottom: 0%;
     left: 50%;
     transform: translateX(-50%);
 }
 
-.dome-item:nth-child(9) {
-    /* Home - bottom left */
-    bottom: 15%;
-    left: 5%;
+.dome-item:nth-child(10) {
+    /* Voice - bottom left */
+    bottom: 10%;
+    left: 15%;
+}
+
+.dome-item:nth-child(11) {
+    /* Home - left */
+    left: 0%;
+    top: 50%;
+    transform: translateY(-50%);
 }
 
 /* Hover - keep original transform */
@@ -333,6 +467,33 @@
     margin-top: 3px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+}
+
+/* Voice-specific dome item styles */
+.dome-item.voice-active {
+    background: rgba(0, 212, 255, 0.3);
+    border-color: var(--color-accent);
+    box-shadow: 0 0 25px rgba(0, 245, 255, 0.6);
+    animation: glow-pulse 1s ease-in-out infinite;
+}
+
+.voice-rings-small {
+    position: absolute;
+    inset: -8px;
+    pointer-events: none;
+}
+
+.voice-ring-small {
+    position: absolute;
+    inset: 0;
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: 50%;
+    animation: ring-expand 1.5s ease-out infinite;
+}
+
+.voice-ring-small:nth-child(2) {
+    inset: -4px;
+    animation-delay: 0.3s;
 }
 
 /* ========== Hologram Section - THREE.JS ========== */
@@ -497,11 +658,14 @@
     background: linear-gradient(180deg, rgba(0, 20, 40, 0.8) 0%, rgba(0, 15, 30, 0.9) 100%);
     border: 1px solid rgba(0, 212, 255, 0.3);
     border-radius: var(--radius-lg);
-    padding: var(--space-md);
+    padding: var(--space-lg);
     backdrop-filter: blur(10px);
     height: fit-content;
+    max-height: 85vh;
+    overflow-y: auto;
     align-self: start;
     margin-top: var(--space-xl);
+    width: 100%;
 }
 
 .panel-section {
@@ -866,7 +1030,7 @@
 /* ========== Responsive ========== */
 @media (max-width: 1200px) {
     .main-container {
-        grid-template-columns: 240px 1fr 240px;
+        grid-template-columns: 240px 1fr 380px;
     }
 
     .dome-menu {

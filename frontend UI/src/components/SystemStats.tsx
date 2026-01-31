@@ -1,17 +1,65 @@
 import { useAppStore } from '../stores/appStore'
-import { CircularMeter, ProgressBar } from './common'
+import { CircularMeter, ProgressBar, StatusIndicator } from './common'
+import { useWebSocket } from '../hooks/useWebSocket'
 import './SystemStats.css'
 
 export function SystemStats() {
     const { systemStats } = useAppStore()
+    const { isConnected, connect } = useWebSocket()
+
+    console.log('📊 SystemStats render - isConnected:', isConnected, 'systemStats:', systemStats)
+
+    const handleRefresh = () => {
+        console.log('🔄 Manual refresh triggered')
+        connect()
+    }
 
     return (
         <div className="system-stats">
-            <div className="system-stats__metrics">
+            <div className="system-stats__header">
+                <h3>System Status</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <StatusIndicator
+                        status={isConnected ? 'active' : 'error'}
+                        label={isConnected ? 'Live' : 'Offline'}
+                    />
+                    <button 
+                        onClick={handleRefresh}
+                        style={{ 
+                            padding: '4px 8px', 
+                            fontSize: '10px', 
+                            background: '#007acc', 
+                            color: 'white', 
+                            border: 'none', 
+                            borderRadius: '3px',
+                            cursor: 'pointer'
+                        }}
+                        title="Force connection check"
+                    >
+                        🔄
+                    </button>
+                </div>
+                {!isConnected && (
+                    <div style={{ 
+                        fontSize: '12px', 
+                        color: '#ff6b6b', 
+                        fontWeight: 'bold',
+                        marginTop: '4px',
+                        animation: 'blink 1s infinite'
+                    }}>
+                        🚨 BACKEND DISCONNECTED 🚨
+                    </div>
+                )}
+                <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>
+                    Debug: {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
+                </div>
+            </div>
+
+            <div className={`system-stats__metrics ${!isConnected ? 'offline' : ''}`}>
                 {/* CPU Usage */}
                 <div className="system-stats__metric">
                     <CircularMeter
-                        value={systemStats.cpu}
+                        value={isConnected ? systemStats.cpu : 0}
                         size={80}
                         label="CPU"
                     />
@@ -20,7 +68,7 @@ export function SystemStats() {
                 {/* RAM Usage */}
                 <div className="system-stats__metric">
                     <CircularMeter
-                        value={systemStats.ram}
+                        value={isConnected ? systemStats.ram : 0}
                         size={80}
                         label="RAM"
                     />
@@ -29,28 +77,28 @@ export function SystemStats() {
                 {/* Temperature */}
                 <div className="system-stats__metric">
                     <CircularMeter
-                        value={systemStats.temp}
+                        value={isConnected ? systemStats.temp : 0}
                         size={80}
                         label="TEMP"
                     />
                 </div>
             </div>
 
-            <div className="system-stats__bars">
+            <div className={`system-stats__bars ${!isConnected ? 'offline' : ''}`}>
                 <ProgressBar
-                    value={systemStats.cpu}
+                    value={isConnected ? systemStats.cpu : 0}
                     label="CPU Usage"
-                    variant={systemStats.cpu > 80 ? 'error' : systemStats.cpu > 60 ? 'warning' : 'success'}
+                    variant={isConnected ? (systemStats.cpu > 80 ? 'error' : systemStats.cpu > 60 ? 'warning' : 'success') : 'error'}
                 />
                 <ProgressBar
-                    value={systemStats.ram}
+                    value={isConnected ? systemStats.ram : 0}
                     label="Memory"
-                    variant={systemStats.ram > 80 ? 'error' : systemStats.ram > 60 ? 'warning' : 'success'}
+                    variant={isConnected ? (systemStats.ram > 80 ? 'error' : systemStats.ram > 60 ? 'warning' : 'success') : 'error'}
                 />
                 <ProgressBar
-                    value={systemStats.temp}
+                    value={isConnected ? systemStats.temp : 0}
                     label="Temperature"
-                    variant={systemStats.temp > 80 ? 'error' : systemStats.temp > 60 ? 'warning' : 'success'}
+                    variant={isConnected ? (systemStats.temp > 80 ? 'error' : systemStats.temp > 60 ? 'warning' : 'success') : 'error'}
                 />
             </div>
         </div>

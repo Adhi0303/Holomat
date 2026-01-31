@@ -1,19 +1,25 @@
 import './index.css'
+import './styles/modes.css'
+import './styles/data-visualization.css'
 import { useState, useEffect, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useAppStore } from './stores/appStore'
 import { HologramScene, ModelSelector, type ModelType } from './components/HologramScene'
 import { StandbyScreen, ScanningScreen, WelcomeScreen, type ScreenState } from './screens'
-import { useMockData } from './hooks/useMockData'
+import { useApiData } from './hooks/useApiData'
 import { useVoiceAssistant } from './hooks/useVoiceAssistant'
+import { useGestureEvents } from './hooks/useGestureEvents'
+import { ScanMode, MeasureMode, SettingsMode, ExportMode, ModelMode, HomeMode, DataVisualizationMode } from './components/modes'
 
 // Menu items for the circular dome
 const menuItems = [
   { id: 'scan', icon: '📷', label: 'Scan' },
   { id: 'model', icon: '📦', label: '3D Model' },
   { id: 'measure', icon: '📐', label: 'Measure' },
+  { id: 'analytics', icon: '📊', label: 'Analytics' },
   { id: 'settings', icon: '⚙️', label: 'Settings' },
   { id: 'export', icon: '📤', label: 'Export' },
+  { id: 'voice', icon: '🎤', label: 'Voice' },
   { id: 'home', icon: '🏠', label: 'Home' },
 ]
 
@@ -28,7 +34,6 @@ function App() {
   const [time, setTime] = useState(new Date())
   const [menuExpanded, setMenuExpanded] = useState(true) // Menu toggle state
   const [isFullscreen, setIsFullscreen] = useState(false) // Hologram fullscreen
-  const [tapCount, setTapCount] = useState(0)
   const [tapTimeout, setTapTimeout] = useState<number | null>(null)
 
   const {
@@ -37,11 +42,26 @@ function App() {
     lastResponse,
   } = useAppStore()
 
-  // Enable mock data simulation
-  useMockData()
+  // Enable API data fetching
+  const { isConnected } = useApiData()
 
-  // Voice assistant (Jarvis)
+  // Voice assistant (Jarvis) with mode switching
   const { isListening, isSpeaking, transcript, toggleListening, isSupported } = useVoiceAssistant()
+
+  // Handle voice-controlled mode switching
+  useEffect(() => {
+    const handleModeSwitch = (event: CustomEvent) => {
+      const { mode } = event.detail
+      console.log(`🎯 Voice command switching to: ${mode}`)
+      setActiveMode(mode)
+    }
+
+    window.addEventListener('jarvis-mode-switch', handleModeSwitch as EventListener)
+    return () => window.removeEventListener('jarvis-mode-switch', handleModeSwitch as EventListener)
+  }, [])
+
+  // Basic gesture events
+  const { currentGesture } = useGestureEvents()
 
   // Update time every second
   useEffect(() => {
@@ -49,14 +69,26 @@ function App() {
     return () => clearInterval(timer)
   }, [])
 
+  // Gesture event handlers are managed by the useGestureEvents hook
+
+  // Mock sensor data for demo
+  const sensors = [
+    { id: 'motion', name: 'Motion', value: 'Active', status: 'active' as const },
+    { id: 'light', name: 'Light', value: '100%', status: 'active' as const },
+    { id: 'camera', name: 'Camera', value: 'Online', status: 'active' as const },
+    { id: 'gesture', name: 'Gesture', value: 'Ready', status: 'active' as const }
+  ]
+
+  // Format time for display
   const formatTime = () => {
     return time.toLocaleTimeString('en-US', {
+      hour12: false,
       hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
+      minute: '2-digit'
     })
   }
 
+  // Format date for display
   const formatDate = () => {
     return time.toLocaleDateString('en-US', {
       weekday: 'short',
@@ -105,7 +137,8 @@ function App() {
 
   // Handle tap detection for fullscreen
   const handleHologramTap = () => {
-    setTapCount(prev => prev + 1)
+    let tapCount = 0
+    tapCount++
 
     // Clear existing timeout
     if (tapTimeout) {
@@ -115,16 +148,14 @@ function App() {
     // Set new timeout
     const timeout = setTimeout(() => {
       // Check tap count after delay
-      setTapCount(current => {
-        if (current === 2 && !isFullscreen) {
-          // Double tap - enter fullscreen
-          setIsFullscreen(true)
-        } else if (current === 3 && isFullscreen) {
-          // Triple tap - exit fullscreen
-          setIsFullscreen(false)
-        }
-        return 0 // Reset
-      })
+      if (tapCount === 2 && !isFullscreen) {
+        // Double tap - enter fullscreen
+        setIsFullscreen(true)
+      } else if (tapCount === 3 && isFullscreen) {
+        // Triple tap - exit fullscreen
+        setIsFullscreen(false)
+      }
+      tapCount = 0 // Reset
     }, 300) // 300ms window for detecting taps
 
     setTapTimeout(timeout)
@@ -163,8 +194,8 @@ function App() {
         <header className="status-bar">
           <div className="status-left">
             <div className="system-status">
-              <span className="status-indicator online"></span>
-              <span className="status-label">SYSTEM ONLINE</span>
+              <span className={`status-indicator ${isConnected ? 'online' : 'offline'}`}></span>
+              <span className={`status-label ${isConnected ? '' : 'offline'}`}>{isConnected ? 'SYSTEM ONLINE' : 'SYSTEM OFFLINE'}</span>
             </div>
             <div className="device-status">
               <span className="device-icon" title="Camera">📷</span>
@@ -176,9 +207,14 @@ function App() {
           <div className="status-center">
             <span className="cpu-label">CPU</span>
             <div className="cpu-bar">
-              <div className="cpu-fill" style={{ width: `${systemStats.cpu}%` }}></div>
+              <div 
+                className={`cpu-fill ${!isConnected ? 'offline' : ''}`} 
+                style={{ width: `${isConnected ? systemStats.cpu : 0}%` }}
+              ></div>
             </div>
-            <span className="cpu-value">{systemStats.cpu}%</span>
+            <span className={`cpu-value ${!isConnected ? 'offline' : ''}`}>
+              {isConnected ? `${systemStats.cpu}%` : 'N/A'}
+            </span>
           </div>
 
           <div className="status-right">
@@ -209,47 +245,37 @@ function App() {
               {menuItems.map((item) => (
                 <button
                   key={item.id}
-                  className={`dome-item ${activeMode === item.id ? 'active' : ''} ${!menuExpanded ? 'collapsed' : ''}`}
-                  onClick={() => setActiveMode(item.id)}
-                  title={item.label}
+                  className={`dome-item ${activeMode === item.id ? 'active' : ''} ${!menuExpanded ? 'collapsed' : ''} ${item.id === 'voice' && (isListening || isSpeaking) ? 'voice-active' : ''}`}
+                  onClick={() => {
+                    if (item.id === 'voice') {
+                      toggleListening()
+                    } else {
+                      setActiveMode(item.id)
+                    }
+                  }}
+                  title={item.id === 'voice' ? 
+                    (!isSupported ? 'Not Supported' :
+                      isSpeaking ? 'SPEAKING...' :
+                        isListening ? (transcript || 'LISTENING...') :
+                          'Say "Hey Jarvis"') : item.label}
                   style={{ pointerEvents: menuExpanded ? 'auto' : 'none' }}
                 >
-                  <span className="dome-item-icon">{item.icon}</span>
+                  <span className="dome-item-icon">
+                    {item.id === 'voice' ? 
+                      (isSpeaking ? '💬' : isListening ? '🎤' : item.icon) : 
+                      item.icon}
+                  </span>
                   <span className="dome-item-label">{item.label}</span>
+                  {item.id === 'voice' && (isListening || isSpeaking) && (
+                    <div className="voice-rings-small">
+                      <div className="voice-ring-small"></div>
+                      <div className="voice-ring-small"></div>
+                    </div>
+                  )}
                 </button>
               ))}
             </div>
 
-            {/* Jarvis Voice Button - Under dome menu */}
-            <div className="voice-section voice-section--left">
-              <button
-                className={`voice-button ${isListening ? 'listening' : ''} ${isSpeaking ? 'speaking' : ''}`}
-                onClick={toggleListening}
-                disabled={!isSupported}
-              >
-                <div className="voice-rings">
-                  <div className="voice-ring"></div>
-                  <div className="voice-ring"></div>
-                  <div className="voice-ring"></div>
-                </div>
-                <div className="voice-icon">{isSpeaking ? '💬' : '🎤'}</div>
-                {(isListening || isSpeaking) && (
-                  <div className="waveform">
-                    <span className="wave-bar"></span>
-                    <span className="wave-bar"></span>
-                    <span className="wave-bar"></span>
-                    <span className="wave-bar"></span>
-                    <span className="wave-bar"></span>
-                  </div>
-                )}
-              </button>
-              <span className="voice-label">
-                {!isSupported ? 'Not Supported' :
-                  isSpeaking ? 'SPEAKING...' :
-                    isListening ? (transcript || 'LISTENING...') :
-                      'Say "Hey Jarvis"'}
-              </span>
-            </div>
           </aside>
 
           {/* Center - Three.js Hologram Viewer */}
@@ -289,10 +315,19 @@ function App() {
             />
           </section>
 
-          {/* Right - Info Panel */}
+          {/* Right - Mode Panel */}
           <aside className="info-panel">
-            <div className="panel-section">
-              <h3 className="panel-header">INFORMATION</h3>
+            {/* Dynamic Mode Content */}
+            {activeMode === 'home' && <HomeMode />}
+            {activeMode === 'scan' && <ScanMode />}
+            {activeMode === 'model' && <ModelMode />}
+            {activeMode === 'measure' && <MeasureMode />}
+            {activeMode === 'analytics' && <DataVisualizationMode />}
+            {activeMode === 'settings' && <SettingsMode />}
+            {activeMode === 'export' && <ExportMode />}
+
+            {/* Compact Info Section */}
+            <div className="panel-section compact">
               <div className="info-grid">
                 <div className="info-row">
                   <span className="info-label">MODE</span>
@@ -302,56 +337,26 @@ function App() {
                   <span className="info-label">MODEL</span>
                   <span className="info-value">{modelNames[currentModel]}</span>
                 </div>
-                <div className="info-row coordinates">
-                  <div className="coord">
-                    <span className="coord-label">X</span>
-                    <span className="coord-value">100</span>
-                  </div>
-                  <div className="coord">
-                    <span className="coord-label">Y</span>
-                    <span className="coord-value">0</span>
-                  </div>
-                  <div className="coord">
-                    <span className="coord-label">Z</span>
-                    <span className="coord-value">20</span>
-                  </div>
-                </div>
               </div>
             </div>
 
-            <div className="panel-section">
-              <h3 className="panel-header">DIMENSIONS</h3>
-              <div className="dimension-info">
-                <div className="dim-row">
-                  <span>📐 150mm × 100mm</span>
-                </div>
-                <div className="dim-row">
-                  <span className="dim-label-inline">MATERIAL</span>
-                  <span className="dim-value">Hologram</span>
-                </div>
-                <div className="dim-row">
-                  <span className="dim-label-inline">RENDER</span>
-                  <span className="dim-value">Three.js</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="panel-section sensors">
+            {/* Compact Sensor Status */}
+            <div className="panel-section sensors compact">
               <h3 className="panel-header">SENSORS</h3>
-              <div className="sensor-grid">
-                <div className="sensor-item active">
+              <div className="sensor-grid compact">
+                <div className={`sensor-item ${sensors.find(s => s.id === 'motion')?.status === 'active' ? 'active' : ''}`}>
                   <span className="sensor-dot"></span>
                   <span>Motion</span>
                 </div>
-                <div className="sensor-item active">
+                <div className={`sensor-item ${sensors.find(s => s.id === 'light')?.status === 'active' ? 'active' : ''}`}>
                   <span className="sensor-dot"></span>
                   <span>Light</span>
                 </div>
-                <div className="sensor-item">
+                <div className={`sensor-item ${currentGesture !== 'READY' ? 'active' : ''}`}>
                   <span className="sensor-dot"></span>
                   <span>Gesture</span>
                 </div>
-                <div className="sensor-item active">
+                <div className={`sensor-item ${sensors.find(s => s.id === 'camera')?.status === 'active' ? 'active' : ''}`}>
                   <span className="sensor-dot"></span>
                   <span>Camera</span>
                 </div>
@@ -402,6 +407,7 @@ function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
     </>
   )
 }
