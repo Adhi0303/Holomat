@@ -23,6 +23,10 @@ interface AppState {
         temp: number
     }
 
+    // Gesture Control
+    gesture: 'none' | 'swipe_left' | 'swipe_right' | 'push' | 'pull' | 'hover'
+    currentModel: string
+
     // Connection
     isOnline: boolean
 
@@ -36,6 +40,8 @@ interface AppState {
     setLastResponse: (response: string) => void
     updateSystemStats: (stats: Partial<{ cpu: number; ram: number; temp: number }>) => void
     setOnline: (online: boolean) => void
+    setGesture: (gesture: 'none' | 'swipe_left' | 'swipe_right' | 'push' | 'pull' | 'hover') => void
+    setCurrentModel: (model: string) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -68,6 +74,10 @@ export const useAppStore = create<AppState>((set) => ({
 
     // Connection
     isOnline: true,
+
+    // Gesture Control
+    gesture: 'none',
+    currentModel: 'cube',
 
     // Actions
     setUser: (name, role) => set({ userName: name, userRole: role }),
@@ -113,4 +123,8 @@ export const useAppStore = create<AppState>((set) => ({
     })),
 
     setOnline: (isOnline) => set({ isOnline }),
+
+    setGesture: (gesture) => set({ gesture }),
+
+    setCurrentModel: (currentModel) => set({ currentModel }),
 }))
