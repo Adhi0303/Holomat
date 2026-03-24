@@ -1,6 +1,6 @@
-import { useRef } from 'react'
+import { Suspense, useRef } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls, Float, Sparkles } from '@react-three/drei'
+import { OrbitControls, Float, Sparkles, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 
 // Holographic material with glow effect
@@ -182,8 +182,26 @@ function ParticleField() {
     )
 }
 
+// Custom GLB Model loaded from URL
+function CustomGLBModel({ url }: { url: string }) {
+    const { scene } = useGLTF(url)
+    const groupRef = useRef<THREE.Group>(null)
+
+    useFrame((state) => {
+        if (groupRef.current) {
+            groupRef.current.rotation.y = state.clock.elapsedTime * 0.2
+        }
+    })
+
+    return (
+        <Float speed={1.5} rotationIntensity={0.2} floatIntensity={0.2}>
+            <primitive ref={groupRef} object={scene} scale={2} />
+        </Float>
+    )
+}
+
 // Model type
-export type ModelType = 'cube' | 'sphere' | 'torus' | 'reactor'
+export type ModelType = 'cube' | 'sphere' | 'torus' | 'reactor' | string
 
 interface HologramSceneProps {
     modelType?: ModelType
@@ -197,6 +215,9 @@ export function HologramScene({
     showGrid = true
 }: HologramSceneProps) {
     const renderModel = () => {
+        if (modelType.startsWith('http')) {
+            return <CustomGLBModel url={modelType} />
+        }
         switch (modelType) {
             case 'sphere':
                 return <SphereModel />
@@ -220,7 +241,8 @@ export function HologramScene({
             }}
             gl={{ alpha: true, antialias: true }}
         >
-            {/* Lighting */}
+            <Suspense fallback={null}>
+                {/* Lighting */}
             <ambientLight intensity={0.3} />
             <pointLight position={[10, 10, 10]} intensity={0.5} color="#00d4ff" />
             <pointLight position={[-10, -10, -10]} intensity={0.3} color="#00f5ff" />
@@ -243,11 +265,12 @@ export function HologramScene({
             <OrbitControls
                 enablePan={false}
                 enableZoom={true}
-                minDistance={3}
-                maxDistance={10}
+                minDistance={1}
+                maxDistance={20}
                 autoRotate={false}
                 autoRotateSpeed={0.5}
             />
+            </Suspense>
         </Canvas>
     )
 }

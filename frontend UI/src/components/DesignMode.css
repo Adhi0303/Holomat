@@ -1,0 +1,317 @@
+/* DesignMode.css — Gemini Design Studio Styles (eDEX-UI) */
+
+.design-mode {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--color-bg-base);
+}
+
+/* ── Controls ── */
+.design-controls {
+  flex-shrink: 0;
+  background: var(--color-bg-panel);
+  border-bottom: 1px solid rgba(0, 212, 255, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+}
+
+.design-style-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.design-label {
+  font-family: var(--font-display);
+  font-size: 9px;
+  color: var(--color-text-muted);
+  letter-spacing: 2px;
+  margin-right: 4px;
+}
+
+.design-style-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: transparent;
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: all 0.15s;
+  text-transform: uppercase;
+}
+.design-style-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.design-style-btn.active {
+  background: rgba(0, 212, 255, 0.12);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.2);
+}
+
+.design-prompt-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 212, 255, 0.04);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  padding: 6px 10px;
+}
+
+.design-prompt-icon {
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.design-prompt-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  caret-color: var(--color-primary);
+}
+.design-prompt-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.design-generate-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  background: rgba(0, 212, 255, 0.12);
+  border: 1px solid rgba(0, 212, 255, 0.5);
+  color: var(--color-primary);
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.design-generate-btn:hover:not(:disabled) {
+  background: rgba(0, 212, 255, 0.22);
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.3);
+}
+.design-generate-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.design-generate-btn.loading {
+  animation: pulse-glow 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(0,212,255,0.2); }
+  50%       { box-shadow: 0 0 20px rgba(0,212,255,0.5); }
+}
+
+/* ── Canvas ── */
+.design-canvas {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  padding: 12px;
+}
+
+/* ── Loading State ── */
+.design-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.design-loading-ring {
+  width: 64px;
+  height: 64px;
+  border: 2px solid rgba(0, 212, 255, 0.1);
+  border-top: 2px solid var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.spin { animation: spin 1s linear infinite; }
+
+.design-loading-text {
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--color-primary);
+  letter-spacing: 3px;
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+.design-loading-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+/* ── Result ── */
+.design-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-height: 100%;
+  width: 100%;
+  position: relative;
+}
+
+.design-action-btn-floating {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: rgba(0, 212, 255, 0.15);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  color: var(--color-primary);
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.2);
+  z-index: 10;
+}
+.design-action-btn-floating:hover {
+  background: rgba(0, 212, 255, 0.3);
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.4);
+}
+
+.design-image {
+  height: calc(100% - 40px);
+  width: 100%;
+  object-fit: cover;
+  border: 1px solid rgba(0, 212, 255, 0.25);
+  box-shadow: 0 0 30px rgba(0, 212, 255, 0.15);
+}
+
+.design-result-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 4px 0;
+}
+
+.design-result-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.design-result-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── Shared action button ── */
+.design-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid rgba(0, 212, 255, 0.25);
+  color: var(--color-text-accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: all 0.15s;
+}
+.design-action-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* ── Empty State ── */
+.design-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.design-empty-icon {
+  color: rgba(0, 212, 255, 0.25);
+  margin-bottom: 4px;
+}
+
+.design-empty-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--color-text-accent);
+  letter-spacing: 3px;
+}
+.design-empty-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+
+.design-suggestions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.design-suggestion {
+  padding: 5px 12px;
+  background: rgba(0, 212, 255, 0.06);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  color: var(--color-primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.design-suggestion:hover {
+  background: rgba(0, 212, 255, 0.14);
+  border-color: var(--color-primary);
+}
+
+/* ── Error State ── */
+.design-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #ff4d4d;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: center;
+}

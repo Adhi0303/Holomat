@@ -44,7 +44,7 @@ class MockIoTSensors:
                 
         self.thread = threading.Thread(target=simulation_loop, daemon=True)
         self.thread.start()
-        print("🔄 Mock IoT sensors started")
+        print("[SENSORS] Mock IoT sensors started")
     
     def _update_motion_sensor(self):
         """Simulate PIR motion sensor"""
@@ -53,7 +53,7 @@ class MockIoTSensors:
             if random.random() > 0.7:  # 30% chance
                 self.sensor_data["motion"]["active"] = True
                 self.sensor_data["motion"]["last_trigger"] = time.time()
-                print("🚶 Motion detected!")
+                print("[MOTION] Motion detected!")
             else:
                 self.sensor_data["motion"]["active"] = False
     
@@ -110,12 +110,12 @@ class MockIoTSensors:
         """Manually trigger motion for testing"""
         self.sensor_data["motion"]["active"] = True
         self.sensor_data["motion"]["last_trigger"] = time.time()
-        print("🔧 Motion manually triggered")
+        print("[TRIGGER] Motion manually triggered")
     
     def simulate_face_scan(self):
         """Simulate face recognition process"""
         self.sensor_data["face_detected"] = True
-        print("👤 Face scan simulated")
+        print("[FACE] Face scan simulated")
         # Reset after 3 seconds
         threading.Timer(3.0, lambda: setattr(self.sensor_data, "face_detected", False)).start()
     
@@ -124,7 +124,7 @@ class MockIoTSensors:
         valid_gestures = ["READY", "SWIPE_LEFT", "SWIPE_RIGHT", "GRAB", "PUSH", "PULL"]
         if gesture in valid_gestures:
             self.sensor_data["gesture"] = gesture
-            print(f"👋 Gesture '{gesture}' simulated")
+            print(f"[GESTURE] Gesture '{gesture}' simulated")
             # Reset to READY after 2 seconds
             threading.Timer(2.0, lambda: setattr(self.sensor_data, "gesture", "READY")).start()
     
@@ -154,11 +154,11 @@ class MockIoTSensors:
     def update_settings(self, new_settings: Dict[str, Any]):
         """Update sensor settings"""
         self.settings.update(new_settings)
-        print(f"⚙️ Settings updated: {new_settings}")
+        print(f"[SETTINGS] Settings updated: {new_settings}")
     
     def calibrate_sensors(self):
         """Simulate sensor calibration"""
-        print("🔧 Calibrating sensors...")
+        print("[CALIBRATE] Calibrating sensors...")
         # Reset to baseline values
         self.sensor_data["distance"] = {"left": 100, "center": 100, "right": 100}
         self.sensor_data["temperature"] = 22.5
@@ -169,7 +169,7 @@ class MockIoTSensors:
     def stop_simulation(self):
         """Stop sensor simulation"""
         self.running = False
-        print("⏹️ Mock IoT sensors stopped")
+        print("[SENSORS] Mock IoT sensors stopped")
 
 # Global mock sensor instance
 mock_sensors = MockIoTSensors()

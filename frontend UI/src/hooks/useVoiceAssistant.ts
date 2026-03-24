@@ -50,77 +50,13 @@ declare global {
     }
 }
 
-// Jarvis command responses
-const jarvisResponses: Record<string, string[]> = {
-    hello: [
-        "Hello sir. How may I assist you today?",
-        "Good day. I'm at your service.",
-        "Greetings. What can I do for you?",
-    ],
-    status: [
-        "All systems are operational, sir.",
-        "Running diagnostics... Everything is functioning within normal parameters.",
-        "System status: Online. All sensors active.",
-    ],
-    time: [
-        `The current time is ${new Date().toLocaleTimeString()}.`,
-        `It's ${new Date().toLocaleTimeString()}, sir.`,
-    ],
-    weather: [
-        "I'm unable to access weather data at the moment, but I'm working on it.",
-        "Weather module not yet connected. Shall I prioritize this integration?",
-    ],
-    joke: [
-        "Why do programmers prefer dark mode? Because light attracts bugs.",
-        "I'd tell you a chemistry joke, but I know I wouldn't get a reaction.",
-        "Why did the developer go broke? Because he used up all his cache.",
-    ],
-    thanks: [
-        "You're welcome, sir.",
-        "Happy to help.",
-        "Anytime, sir.",
-    ],
-    default: [
-        "I'm not sure I understand. Could you rephrase that?",
-        "I'll need more information to process that request.",
-        "Command not recognized. Would you like me to learn this?",
-    ],
-}
-
-// Get random response from category
-const getRandomResponse = (category: keyof typeof jarvisResponses): string => {
-    const responses = jarvisResponses[category]
-    return responses[Math.floor(Math.random() * responses.length)]
-}
-
-// Parse command and get appropriate response
-const parseCommand = (command: string): string => {
-    const lowerCommand = command.toLowerCase()
-
-    if (lowerCommand.includes('hello') || lowerCommand.includes('hi') || lowerCommand.includes('hey')) {
-        return getRandomResponse('hello')
-    }
-    if (lowerCommand.includes('status') || lowerCommand.includes('systems')) {
-        return getRandomResponse('status')
-    }
-    if (lowerCommand.includes('time') || lowerCommand.includes('what time')) {
-        return `The current time is ${new Date().toLocaleTimeString()}.`
-    }
-    if (lowerCommand.includes('weather')) {
-        return getRandomResponse('weather')
-    }
-    if (lowerCommand.includes('joke') || lowerCommand.includes('funny')) {
-        return getRandomResponse('joke')
-    }
-    if (lowerCommand.includes('thank')) {
-        return getRandomResponse('thanks')
-    }
-
-    return getRandomResponse('default')
-}
 
 /**
  * Voice Assistant hook - implements Jarvis with speech recognition and synthesis
+ * 
+ * FIX: isSpeaking is now tracked via a REF (isSpeakingRef) inside the useEffect
+ * so the recognition callbacks always see the CURRENT value — not a stale closure.
+ * This prevents the recognition loop from dying every time speech starts/stops.
  */
 export function useVoiceAssistant() {
     const [isListening, setIsListening] = useState(false)
@@ -130,6 +66,9 @@ export function useVoiceAssistant() {
 
     const recognitionRef = useRef<SpeechRecognition | null>(null)
     const synthesisRef = useRef<SpeechSynthesis | null>(null)
+    const shouldListenRef = useRef(false)
+    const isSpeakingRef = useRef(false)   // Mirror of isSpeaking — always current
+    const networkRetryRef = useRef(0)
     const [voicesLoaded, setVoicesLoaded] = useState(false)
 
     const {
@@ -138,31 +77,36 @@ export function useVoiceAssistant() {
         setLastResponse,
     } = useAppStore()
 
-    // Initialize speech recognition and synthesis
+    // Keep ref in sync with state
+    useEffect(() => {
+        isSpeakingRef.current = isSpeaking
+    }, [isSpeaking])
+
+    // Initialize speech recognition ONCE (no isSpeaking dependency!)
     useEffect(() => {
         if (typeof window === 'undefined') return
 
-        // Speech Recognition setup
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
 
         if (!SpeechRecognition) {
             setIsSupported(false)
-            console.warn('🎤 Speech Recognition not supported in this browser')
+            console.warn('Speech Recognition not supported in this browser')
             return
         }
 
         const recognition = new SpeechRecognition()
-        recognition.continuous = true
+        recognition.continuous = false
         recognition.interimResults = true
         recognition.lang = 'en-US'
 
         recognition.onstart = () => {
             setIsListening(true)
             setJarvisState('listening')
-            console.log('🎤 Jarvis is listening...')
+            console.log('Jarvis is listening...')
         }
 
         recognition.onresult = (event: SpeechRecognitionEvent) => {
+            networkRetryRef.current = 0
             let finalTranscript = ''
             let interimTranscript = ''
 
@@ -180,28 +124,54 @@ export function useVoiceAssistant() {
             if (finalTranscript) {
                 setLastCommand(finalTranscript)
                 recognition.stop()
-                processCommand(finalTranscript)
+                // processCommand is called via ref so it's always current
+                processCommandRef.current?.(finalTranscript)
             }
         }
 
         recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-            console.error('🎤 Speech recognition error:', event.error)
+            // Suppress harmless 'aborted' events (browser fires these on stop())
+            if (event.error === 'aborted') return
+            
+            // Microphone permission denied
+            if (event.error === 'not-allowed') {
+                shouldListenRef.current = false
+                setIsListening(false)
+                setJarvisState('idle')
+                return
+            }
 
-            // Handle different error types
-            switch (event.error) {
-                case 'no-speech':
-                    console.log('🎤 No speech detected, still listening...')
+            console.error('Speech recognition error:', event.error)
+
+            if (event.error === 'network') {
+                networkRetryRef.current++
+                if (networkRetryRef.current > 3) {
+                    console.warn('Speech: max network retries reached, stopping.')
+                    shouldListenRef.current = false
+                    setIsListening(false)
+                    setJarvisState('idle')
+                    networkRetryRef.current = 0
                     return
-                case 'network':
-                    console.warn('🎤 Network error - retrying...')
+                }
+                console.warn(`Speech network error - retry ${networkRetryRef.current}/3...`)
+                setIsListening(false)
+                if (shouldListenRef.current && !isSpeakingRef.current) {
                     setTimeout(() => {
-                        if (recognitionRef.current) {
-                            try { recognitionRef.current.start() } catch (e) { console.error(e) }
+                        if (shouldListenRef.current && !isSpeakingRef.current) {
+                            try { recognition.start() } catch (_e) { /* already started */ }
                         }
-                    }, 1000)
-                    return
-                case 'aborted':
-                    return
+                    }, 2000)
+                }
+                return
+            }
+
+            if (event.error === 'no-speech') {
+                if (shouldListenRef.current && !isSpeakingRef.current) {
+                    setTimeout(() => {
+                        try { recognition.start() } catch (_e) { /* */ }
+                    }, 300)
+                }
+                return
             }
 
             setIsListening(false)
@@ -209,10 +179,17 @@ export function useVoiceAssistant() {
         }
 
         recognition.onend = () => {
-            console.log('🎤 Recognition ended')
-            if (!isSpeaking) {
-                setIsListening(false)
-                setJarvisState('idle')
+            setIsListening(false)
+
+            // Use ref so we always see the CURRENT speaking state
+            if (shouldListenRef.current && !isSpeakingRef.current) {
+                setTimeout(() => {
+                    if (shouldListenRef.current && !isSpeakingRef.current) {
+                        try { recognition.start() } catch (_e) { /* */ }
+                    }
+                }, 200)
+            } else {
+                if (!isSpeakingRef.current) setJarvisState('idle')
             }
         }
 
@@ -224,66 +201,60 @@ export function useVoiceAssistant() {
             const voices = synthesisRef.current?.getVoices()
             if (voices && voices.length > 0) {
                 setVoicesLoaded(true)
-                console.log('🔊 Speech synthesis voices loaded:', voices.length)
             }
         }
 
-        loadVoices() // Try immediately
+        loadVoices()
         if (synthesisRef.current) {
             synthesisRef.current.onvoiceschanged = loadVoices
         }
 
         return () => {
+            shouldListenRef.current = false
             recognition.abort()
         }
-    }, [setJarvisState, setLastCommand, isSpeaking])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [setJarvisState, setLastCommand]) // NO isSpeaking here!
 
     // Text-to-Speech
     const speak = useCallback((text: string) => {
         if (!synthesisRef.current || !voicesLoaded) {
-            console.warn('🔊 Speech synthesis not ready or voices not loaded')
+            console.warn('Speech synthesis not ready')
             return
         }
 
-        // Cancel any ongoing speech
         synthesisRef.current.cancel()
-
         const utterance = new SpeechSynthesisUtterance(text)
-        utterance.rate = 0.9
-        utterance.pitch = 1
-        utterance.volume = 1
+        utterance.rate = 1.0
 
-        // Try to find a suitable voice
         const voices = synthesisRef.current.getVoices()
         const preferredVoice = voices.find(voice =>
-            voice.name.includes('Daniel') ||
-            voice.name.includes('Alex') ||
-            voice.name.includes('Google UK English Male') ||
-            voice.name.includes('Microsoft David') ||
-            voice.name.includes('Microsoft Mark')
-        ) || voices.find(voice => voice.lang.startsWith('en') && voice.name.toLowerCase().includes('male'))
-
-        if (preferredVoice) {
-            utterance.voice = preferredVoice
-            console.log('🔊 Using voice:', preferredVoice.name)
-        } else {
-            console.log('🔊 Using default voice')
-        }
+            voice.name.includes('Daniel') || voice.name.includes('Google UK English Male')
+        ) || voices.find(voice => voice.lang.startsWith('en'))
+        if (preferredVoice) utterance.voice = preferredVoice
 
         utterance.onstart = () => {
             setIsSpeaking(true)
             setJarvisState('speaking')
-            console.log('🔊 Jarvis speaking...')
+            // Abort recognition while speaking
+            if (recognitionRef.current) recognitionRef.current.abort()
         }
 
         utterance.onend = () => {
             setIsSpeaking(false)
             setJarvisState('idle')
-            console.log('🔊 Jarvis finished speaking')
+
+            // Resume listening after speaking
+            if (shouldListenRef.current) {
+                setTimeout(() => {
+                    try {
+                        recognitionRef.current?.start()
+                    } catch (_e) { /* */ }
+                }, 300)
+            }
         }
 
-        utterance.onerror = (event) => {
-            console.error('🔊 Speech synthesis error:', event)
+        utterance.onerror = () => {
             setIsSpeaking(false)
             setJarvisState('idle')
         }
@@ -291,73 +262,95 @@ export function useVoiceAssistant() {
         try {
             synthesisRef.current.speak(utterance)
         } catch (error) {
-            console.error('🔊 Failed to speak:', error)
+            console.error('Failed to speak:', error)
             setIsSpeaking(false)
             setJarvisState('idle')
         }
     }, [setJarvisState, voicesLoaded])
 
-    // Process voice command using enhanced backend
+    // Process command — routes through backend
     const processCommand = useCallback(async (command: string) => {
+        if (command.toLowerCase().match(/^(stop|cancel|quiet|silence|goodbye|exit)/)) {
+            shouldListenRef.current = false
+            setIsListening(false)
+            setJarvisState('idle')
+            speak("Goodbye, sir.")
+            return
+        }
+
         setJarvisState('processing')
-        console.log(`🤖 Processing: "${command}"`)
+        console.log(`Processing: "${command}"`)
 
         try {
-            // Call enhanced Jarvis backend
-            const response = await fetch('/api/jarvis/command', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ command })
+            const res = await fetch('http://localhost:8001/api/jarvis/command', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ command }),
             })
             
-            const result = await response.json()
-            console.log('🤖 Jarvis response:', result)
-            
-            // Handle mode switching if requested
-            if (result.action === 'switch_mode' && result.target_mode) {
-                console.log(`🔄 Switching to ${result.target_mode} mode`)
-                // Trigger mode switch event
-                window.dispatchEvent(new CustomEvent('jarvis-mode-switch', {
-                    detail: { mode: result.target_mode }
-                }))
+            if (!res.ok) {
+                throw new Error(`Backend returned ${res.status}`)
             }
             
-            setLastResponse(`"${result.response}"`)
-            speak(result.response)
-            
+            const data = await res.json()
+            console.log('Backend response:', data)
+
+            if (data.action === 'switch_mode' && data.target_mode) {
+                window.dispatchEvent(new CustomEvent('jarvis-mode-switch', {
+                    detail: { mode: data.target_mode }
+                }))
+            }
+
+            if (data.action === 'generate_image' && data.payload) {
+                window.dispatchEvent(new CustomEvent('jarvis-image-generated', {
+                    detail: {
+                        prompt: data.payload.prompt,
+                        style:  data.payload.style,
+                    }
+                }))
+            }
+
+            const responseText = data.response || "Command acknowledged, sir."
+            setLastResponse(responseText)
+            speak(responseText)
+
         } catch (error) {
-            console.error('🤖 Jarvis API error:', error)
-            // Fallback to local processing
-            const fallback = parseCommand(command)
-            console.log('🤖 Fallback response:', fallback)
-            setLastResponse(`"${fallback}"`)
+            console.error('Backend error:', error)
+            const fallback = "I'm having trouble connecting to the backend, sir."
+            setLastResponse(fallback)
             speak(fallback)
         }
     }, [setJarvisState, setLastResponse, speak])
 
-    // Start listening
-    const startListening = useCallback(() => {
-        if (!recognitionRef.current || isListening) return
+    // Keep processCommand accessible to the recognition callback via ref
+    const processCommandRef = useRef(processCommand)
+    useEffect(() => {
+        processCommandRef.current = processCommand
+    }, [processCommand])
 
-        setTranscript('')
+    // Public controls
+    const startListening = useCallback(() => {
+        if (!recognitionRef.current) return
+        shouldListenRef.current = true
+        networkRetryRef.current = 0
         try {
             recognitionRef.current.start()
         } catch (error) {
-            console.error('Failed to start recognition:', error)
+            console.error('Failed to start:', error)
         }
-    }, [isListening])
-
-    // Stop listening
-    const stopListening = useCallback(() => {
-        if (!recognitionRef.current) return
-        recognitionRef.current.stop()
     }, [])
 
-    // Toggle listening
+    const stopListening = useCallback(() => {
+        shouldListenRef.current = false
+        if (recognitionRef.current) recognitionRef.current.stop()
+        if (synthesisRef.current) synthesisRef.current.cancel()
+        setIsListening(false)
+        setIsSpeaking(false)
+        setJarvisState('idle')
+    }, [setJarvisState])
+
     const toggleListening = useCallback(() => {
-        if (isListening) {
+        if (isListening || shouldListenRef.current) {
             stopListening()
         } else {
             startListening()
@@ -369,9 +362,9 @@ export function useVoiceAssistant() {
         isSpeaking,
         transcript,
         isSupported,
+        toggleListening,
         startListening,
         stopListening,
-        toggleListening,
-        speak,
+        processTextCommand: processCommand
     }
 }

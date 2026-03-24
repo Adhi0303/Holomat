@@ -10,3 +10,8 @@ def get_system_stats():
         "ram": random.randint(40, 90),
         "temp": random.randint(35, 85)
     }
+
+@router.get("/status")
+def get_status():
+    """Health check endpoint"""
+    return {"status": "online", "system": "healthy"}

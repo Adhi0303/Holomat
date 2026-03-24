@@ -1,0 +1,145 @@
+/* HoloMat — 5-Zone Grid Layout (eDEX-UI Inspired) */
+
+/* ── Main Dashboard Grid ── */
+.holomat-grid {
+  display: grid;
+  grid-template-columns: 220px 1fr 220px;
+  grid-template-rows: var(--zone-header-height) 1fr 260px;
+  grid-template-areas:
+    "header   header   header"
+    "sysinfo  viewport sensors"
+    "actions  terminal sensors";
+  height: 100vh;
+  width: 100vw;
+  gap: 1px;
+  background: rgba(0, 212, 255, 0.06);
+  overflow: hidden;
+  transition: grid-template-areas 0.35s ease;
+}
+
+/* ── Keyboard Open: 4-col grid — terminal and keyboard each get 1fr (true 50/50) ── */
+.holomat-grid--keyboard-open {
+  grid-template-columns: 220px 1fr 1fr 220px;
+  grid-template-areas:
+    "header   header    header   header"
+    "sysinfo  viewport  viewport sensors"
+    "sysinfo  terminal  keyboard sensors";
+}
+
+.holomat-grid--keyboard-open .zone--actions {
+  display: none;
+}
+
+.zone--keyboard {
+  grid-area: keyboard;
+  overflow: hidden;
+}
+
+/* ── Zone Base ── */
+.zone {
+  background: var(--color-bg-surface);
+  border: var(--zone-border);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.zone-header {
+  height: var(--zone-header-height);
+  min-height: var(--zone-header-height);
+  background: var(--zone-header-bg);
+  border-bottom: var(--zone-border);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-sm);
+  gap: var(--space-sm);
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  color: var(--color-text-accent);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  user-select: none;
+}
+
+.zone-header .zone-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  box-shadow: 0 0 6px var(--color-primary);
+  flex-shrink: 0;
+}
+
+.zone-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-sm);
+}
+
+/* Thin custom scrollbar */
+.zone-body::-webkit-scrollbar {
+  width: 3px;
+}
+.zone-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.zone-body::-webkit-scrollbar-thumb {
+  background: var(--color-primary-dim);
+  border-radius: 0;
+}
+
+/* ── Zone Assignments ── */
+.zone--header   { grid-area: header; }
+.zone--sysinfo  { grid-area: sysinfo; }
+.zone--viewport { grid-area: viewport; border: none; background: var(--color-bg-base); }
+.zone--sensors  { grid-area: sensors; }
+.zone--actions  { grid-area: actions; }
+.zone--terminal { grid-area: terminal; }
+
+/* ── Active Zone Highlight ── */
+.zone.zone--active {
+  border-color: rgba(0, 212, 255, 0.4);
+  box-shadow: var(--glow-inset), 0 0 12px rgba(0, 212, 255, 0.08);
+}
+
+/* ── Header Zone (Top Bar) ── */
+.zone--header {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-md);
+  background: var(--color-bg-panel);
+  border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  letter-spacing: 2px;
+  color: var(--color-text-accent);
+}
+
+/* ── Responsive: Tablet ── */
+@media (max-width: 1024px) {
+  .holomat-grid {
+    grid-template-columns: 180px 1fr 180px;
+    grid-template-rows: var(--zone-header-height) 1fr 220px;
+  }
+}
+
+/* ── Responsive: Mobile ── */
+@media (max-width: 768px) {
+  .holomat-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: var(--zone-header-height) auto 1fr auto auto;
+    grid-template-areas:
+      "header"
+      "sysinfo"
+      "viewport"
+      "sensors"
+      "terminal";
+  }
+  .zone--actions {
+    display: none; /* Collapse on mobile */
+  }
+}

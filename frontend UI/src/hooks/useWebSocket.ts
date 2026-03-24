@@ -43,7 +43,7 @@ type WebSocketMessage = {
     response?: string
 }
 
-export function useWebSocket(url: string = 'ws://localhost:8000/ws') {
+export function useWebSocket(url: string = 'ws://localhost:8001/ws') {
     const {
         updateSystemStats,
         updateSensor,
@@ -55,7 +55,7 @@ export function useWebSocket(url: string = 'ws://localhost:8000/ws') {
     const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const heartbeatTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const reconnectAttempts = useRef(0)
-    const maxReconnectAttempts = 5
+    const maxReconnectAttempts = 10
 
     const [connected, setConnected] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -71,7 +71,7 @@ export function useWebSocket(url: string = 'ws://localhost:8000/ws') {
             if (wsRef.current) {
                 wsRef.current.close()
             }
-        }, 15000) // 15 seconds timeout
+        }, 45000) // 45 seconds — long enough for 3D generation
     }, [])
 
     const resetHeartbeat = useCallback(() => {

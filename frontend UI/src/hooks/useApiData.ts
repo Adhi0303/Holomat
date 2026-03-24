@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { useWebSocket } from './useWebSocket'
+import { API_ENDPOINTS } from '../config/api'
 
 /**
  * API data integration hook - fetches real data from backend
@@ -17,14 +18,14 @@ export function useApiData() {
     const intervalRef = useRef<number | null>(null)
 
     // Use WebSocket for real-time updates
-    const { isConnected } = useWebSocket()
+    const { connected: isConnected } = useWebSocket()
 
     // Fallback: Fetch sensors from API if WebSocket not connected
     const fetchSensors = useCallback(async () => {
         if (isConnected) return // Skip if WebSocket is connected
 
         try {
-            const response = await fetch('/api/sensors')
+            const response = await fetch(API_ENDPOINTS.sensors)
             if (response.ok) {
                 const sensors = await response.json()
                 sensors.forEach((sensor: any) => {

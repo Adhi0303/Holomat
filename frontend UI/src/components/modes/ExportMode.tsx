@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
+import { API_ENDPOINTS } from '../../config/api'
 
 export function ExportMode() {
   const [exportFormat, setExportFormat] = useState('json')
@@ -22,15 +23,15 @@ export function ExportMode() {
 
   const startExport = async () => {
     setIsExporting(true)
-    
+
     try {
       // Get selected data types
       const selectedDataTypes = Object.entries(exportData)
         .filter(([_, enabled]) => enabled)
         .map(([key, _]) => key)
-      
+
       // Call backend export API
-      const response = await fetch('/api/sensors/export', {
+      const response = await fetch(API_ENDPOINTS.sensorsExport, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -40,9 +41,9 @@ export function ExportMode() {
           data_types: selectedDataTypes
         })
       })
-      
+
       const result = await response.json()
-      
+
       // Create export record with download function
       const exportRecord = {
         id: Date.now(),
@@ -53,10 +54,10 @@ export function ExportMode() {
         fileContent: result.file_content,
         downloadUrl: result.download_url
       }
-      
+
       setExportHistory(prev => [exportRecord, ...prev.slice(0, 4)])
       setIsExporting(false)
-      
+
     } catch (error) {
       console.error('Export failed:', error)
       setIsExporting(false)
@@ -68,22 +69,22 @@ export function ExportMode() {
     const blob = new Blob([record.fileContent], {
       type: getContentType(record.format)
     })
-    
+
     // Create download link
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
     link.download = `holomat_export_${record.timestamp.replace(/:/g, '-')}.${record.format}`
-    
+
     // Trigger download
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
-    
+
     // Clean up
     window.URL.revokeObjectURL(url)
   }
-  
+
   const getContentType = (format: string) => {
     switch (format) {
       case 'json': return 'application/json'
@@ -156,7 +157,7 @@ export function ExportMode() {
       </div>
 
       <div className="export-controls">
-        <button 
+        <button
           className={`export-btn ${isExporting ? 'loading' : ''}`}
           onClick={startExport}
           disabled={isExporting || Object.values(exportData).every(v => !v)}
@@ -185,7 +186,7 @@ export function ExportMode() {
               </div>
               <div className="history-details">
                 <span>{record.items} items • {record.size}</span>
-                <button 
+                <button
                   className="download-btn"
                   onClick={() => downloadFile(record)}
                   title="Download file"
