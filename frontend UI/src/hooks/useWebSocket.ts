@@ -92,7 +92,11 @@ export function useWebSocket(url: string = 'ws://localhost:8001/ws') {
     }, [url])
 
     const connect = useCallback(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) return
+        // Prevent duplicate connections
+        if (wsRef.current?.readyState === WebSocket.OPEN || 
+            wsRef.current?.readyState === WebSocket.CONNECTING) {
+            return
+        }
 
         try {
             const ws = new WebSocket(url)
@@ -161,7 +165,12 @@ export function useWebSocket(url: string = 'ws://localhost:8001/ws') {
 
             ws.onclose = async (event) => {
                 const reason = getWebSocketCloseReason(event.code)
-                console.log(`❌ WebSocket disconnected: Code=${event.code}, Reason="${reason}"`)
+                
+                // Only log if it's not a duplicate connection attempt
+                if (event.code !== 1006 || reconnectAttempts.current > 0) {
+                    console.log(`❌ WebSocket disconnected: Code=${event.code}, Reason="${reason}"`)
+                }
+                
                 setConnected(false)
                 wsRef.current = null
 
@@ -186,8 +195,11 @@ export function useWebSocket(url: string = 'ws://localhost:8001/ws') {
             }
 
             ws.onerror = () => {
-                console.error('🚨 WebSocket error')
-                setError('WebSocket connection failed')
+                // Only log errors after initial connection attempt
+                if (reconnectAttempts.current > 0) {
+                    console.error('🚨 WebSocket error')
+                    setError('WebSocket connection failed')
+                }
                 setConnected(false)
             }
 
@@ -237,9 +249,12 @@ export function useWebSocket(url: string = 'ws://localhost:8001/ws') {
 
     // Connect on mount
     useEffect(() => {
-        connect()
+        const timer = setTimeout(() => {
+            connect()
+        }, 100) // Small delay to prevent double connection in React strict mode
 
         return () => {
+            clearTimeout(timer)
             disconnect()
         }
     }, [connect, disconnect])

@@ -16,3 +16,6 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 uvicorn==0.40.0
 websockets==16.0
+Pillow>=10.0.0
+loguru>=0.7.0
+tripo3d>=0.1.0

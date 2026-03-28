@@ -24,16 +24,24 @@ export function useFaceDetection({ onFaceDetected, onNoFace, isActive }: FaceDet
         const loadModel = async () => {
             try {
                 setIsModelLoading(true)
+                
+                // Skip model loading - use simulation mode
+                console.log('📷 Face detection: Using simulation mode')
+                setError('Using simulation mode')
+                setIsModelLoading(false)
+                
+                // Uncomment below to enable real face detection (requires internet)
+                /*
                 const model = faceDetection.SupportedModels.MediaPipeFaceDetector
                 const detectorConfig: faceDetection.MediaPipeFaceDetectorTfjsModelConfig = {
                     runtime: 'tfjs',
                     maxFaces: 1,
-                    modelType: 'short', // 'short' or 'full' - short is faster
+                    modelType: 'short',
                 }
-
                 const det = await faceDetection.createDetector(model, detectorConfig)
                 setDetector(det)
                 setIsModelLoading(false)
+                */
             } catch (err) {
                 console.error('Failed to load face detection model:', err)
                 setError('Failed to load face detection model')
