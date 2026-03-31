@@ -3,28 +3,28 @@ from fastapi.responses import Response
 import random
 import time
 from datetime import datetime
-from hardware.mock_sensors import mock_sensors
+from hardware.sensor_manager import sensor_manager
 
 router = APIRouter()
 
 # Store exported files temporarily
 exported_files = {}
 
-# Start mock sensors on module load
-mock_sensors.start_simulation()
+# sensor_manager starts both the Arduino bridge and mock simulation on import
 
 @router.get("/sensors")
 def get_sensors():
     """Get current sensor readings"""
-    data = mock_sensors.get_sensor_readings()
-    
+    data = sensor_manager.get_sensor_readings()
+    source = sensor_manager.get_hardware_source()
+
     return [
-        {"id": "motion", "name": "Motion", "value": "ACTIVE" if data["motion"]["active"] else "IDLE", "status": "active"},
-        {"id": "light", "name": "Light", "value": f"{data['light']}%", "status": "active"},
-        {"id": "gesture", "name": "Gesture", "value": data["gesture"], "status": "active" if data["gesture"] != "READY" else "ready"},
+        {"id": "motion", "name": "Motion", "value": "ACTIVE" if data["motion"]["active"] else "IDLE", "status": "active", "source": source},
+        {"id": "light", "name": "Light", "value": f"{data['light']}%", "status": "active", "source": source},
+        {"id": "gesture", "name": "Gesture", "value": data["gesture"], "status": "active" if data["gesture"] != "READY" else "ready", "source": source},
         {"id": "camera", "name": "Camera", "value": "SCANNING" if data["face_detected"] else "ON", "status": "active"},
         {"id": "jarvis", "name": "Jarvis", "value": "LISTENING" if data["voice_active"] else "IDLE", "status": "active" if data["voice_active"] else "idle"},
-        {"id": "distance", "name": "Distance", "value": f"{data['distances']['center']} cm", "status": "active"},
+        {"id": "distance", "name": "Distance", "value": f"{data['distances']['center']} cm", "status": "active", "source": source},
         {"id": "temperature", "name": "Temperature", "value": f"{data['environment']['temperature']}°C", "status": "active"},
         {"id": "humidity", "name": "Humidity", "value": f"{data['environment']['humidity']}%", "status": "active"}
     ]
@@ -32,19 +32,20 @@ def get_sensors():
 @router.get("/sensors/measurements")
 def get_measurements():
     """Get detailed sensor measurements for measure mode"""
-    data = mock_sensors.get_sensor_readings()
+    data = sensor_manager.get_sensor_readings()
     return {
         "distance": data["distances"]["center"],
         "angle": random.uniform(0, 360),  # Simulated angle
         "temperature": data["environment"]["temperature"],
         "humidity": data["environment"]["humidity"],
+        "source": sensor_manager.get_hardware_source(),
         "timestamp": datetime.now().isoformat()
     }
 
 @router.post("/sensors/calibrate")
 def calibrate_sensors():
     """Calibrate all sensors"""
-    result = mock_sensors.calibrate_sensors()
+    result = sensor_manager.calibrate_sensors()
     return {
         "status": "success",
         "message": "Sensor calibration completed",
@@ -54,20 +55,30 @@ def calibrate_sensors():
 @router.post("/sensors/trigger/motion")
 def trigger_motion():
     """Manually trigger motion sensor for testing"""
-    mock_sensors.trigger_motion()
+    sensor_manager.trigger_motion()
     return {"status": "triggered", "sensor": "motion"}
 
 @router.post("/sensors/trigger/gesture")
 def trigger_gesture(payload: dict):
     """Manually trigger gesture for testing"""
     gesture = payload.get("gesture", "READY")
-    mock_sensors.simulate_gesture(gesture)
+    sensor_manager.simulate_gesture(gesture)
     return {"status": "triggered", "gesture": gesture}
+
+@router.get("/sensors/hardware")
+def get_hardware_status():
+    """Check if real Arduino hardware is connected"""
+    connected = sensor_manager.is_hardware_connected()
+    return {
+        "connected": connected,
+        "source": sensor_manager.get_hardware_source(),
+        "message": "Arduino hardware active" if connected else "Using mock simulation"
+    }
 
 @router.post("/sensors/scan/start")
 def start_biometric_scan():
     """Start biometric face scan"""
-    mock_sensors.simulate_face_scan()
+    sensor_manager.simulate_face_scan()
     return {
         "scan_id": f"scan_{int(time.time())}",
         "status": "started",
@@ -77,7 +88,7 @@ def start_biometric_scan():
 @router.get("/sensors/scan/result/{scan_id}")
 def get_scan_result(scan_id: str):
     """Get biometric scan result"""
-    data = mock_sensors.get_sensor_readings()
+    data = sensor_manager.get_sensor_readings()
     return {
         "scan_id": scan_id,
         "status": "completed",
@@ -91,16 +102,16 @@ def get_scan_result(scan_id: str):
 @router.get("/sensors/settings")
 def get_sensor_settings():
     """Get current sensor settings"""
-    return mock_sensors.settings
+    return sensor_manager.settings
 
 @router.post("/sensors/settings")
 def update_sensor_settings(settings: dict):
     """Update sensor settings"""
-    mock_sensors.update_settings(settings)
+    sensor_manager.update_settings(settings)
     return {
         "status": "success",
         "message": "Settings updated",
-        "settings": mock_sensors.settings
+        "settings": sensor_manager.settings
     }
 
 @router.post("/sensors/export")
@@ -110,7 +121,7 @@ def export_sensor_data(export_config: dict):
     data_types = export_config.get("data_types", [])
     
     # Get actual sensor data
-    sensor_data = mock_sensors.get_sensor_readings()
+    sensor_data = sensor_manager.get_sensor_readings()
     
     # Build export data based on selected types
     export_data = {}

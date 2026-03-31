@@ -2,47 +2,57 @@ from fastapi import APIRouter, WebSocket
 import asyncio
 import random
 import json
+from hardware.sensor_manager import sensor_manager
 
 ws_router = APIRouter()
 
-# Simulate sensor data
-def generate_sensor_data():
+
+def _build_sensor_payload(data: dict, source: str) -> list:
+    """Convert sensor_manager readings to the WebSocket sensor array format."""
     return [
-        {"id": "motion", "name": "Motion", "value": random.choice(["ACTIVE", "IDLE"]), "status": "active" if random.random() > 0.7 else "ready"},
-        {"id": "light", "name": "Light", "value": f"{random.randint(20, 90)}%", "status": "active"},
-        {"id": "gesture", "name": "Gesture", "value": random.choice(["READY", "SWIPE_UP", "SWIPE_DOWN", "SWIPE_LEFT", "SWIPE_RIGHT", "GRAB", "POINT", "TAP"]), "status": "ready" if random.random() > 0.95 else "active"},
-        {"id": "camera", "name": "Camera", "value": "ON", "status": "active"},
-        {"id": "jarvis", "name": "Jarvis", "value": random.choice(["IDLE", "LISTENING", "SPEAKING"]), "status": "idle" if random.random() > 0.8 else "active"}
+        {"id": "motion",      "name": "Motion",      "value": "ACTIVE" if data["motion"]["active"] else "IDLE",    "status": "active",                                         "source": source},
+        {"id": "light",       "name": "Light",        "value": f"{data['light']}%",                                 "status": "active",                                         "source": source},
+        {"id": "gesture",     "name": "Gesture",      "value": data["gesture"],                                     "status": "active" if data["gesture"] != "READY" else "ready", "source": source},
+        {"id": "camera",      "name": "Camera",       "value": "SCANNING" if data["face_detected"] else "ON",       "status": "active"},
+        {"id": "jarvis",      "name": "Jarvis",       "value": "LISTENING" if data["voice_active"] else "IDLE",     "status": "active" if data["voice_active"] else "idle"},
+        {"id": "distance",    "name": "Distance",     "value": f"{data['distances']['center']} cm",                 "status": "active",                                         "source": source},
+        {"id": "temperature", "name": "Temperature",  "value": f"{data['environment']['temperature']}°C",           "status": "active"},
+        {"id": "humidity",    "name": "Humidity",     "value": f"{data['environment']['humidity']}%",               "status": "active"},
     ]
+
 
 @ws_router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
-    print("✅ WebSocket client connected")
+    source = sensor_manager.get_hardware_source()
+    print(f"✅ WebSocket client connected (sensor source: {source})")
 
     try:
         while True:
             try:
-                # Send system stats
+                source = sensor_manager.get_hardware_source()
+
+                # System stats (CPU, RAM, temp are still simulated — Pi will provide real ones later)
                 system_data = {
                     "type": "system_update",
                     "payload": {
-                        "cpu": random.randint(30, 80),
-                        "ram": random.randint(40, 90),
-                        "temp": random.randint(35, 85)
+                        "cpu":    random.randint(30, 80),
+                        "ram":    random.randint(40, 90),
+                        "temp":   random.randint(35, 85),
+                        "source": source,
                     }
                 }
                 await ws.send_text(json.dumps(system_data))
-                print("📤 Sent system update")
 
-                # Send sensor updates (less frequently)
-                if random.random() > 0.7:  # 30% chance every 2 seconds
-                    sensor_data = {
-                        "type": "sensor_update",
-                        "payload": generate_sensor_data()
-                    }
-                    await ws.send_text(json.dumps(sensor_data))
-                    print("📤 Sent sensor update")
+                # Live sensor data from sensor_manager (Arduino or Mock)
+                sensor_data_raw = sensor_manager.get_sensor_readings()
+                sensor_data = {
+                    "type": "sensor_update",
+                    "payload": _build_sensor_payload(sensor_data_raw, source),
+                    "hardware_connected": sensor_manager.is_hardware_connected(),
+                    "source": source,
+                }
+                await ws.send_text(json.dumps(sensor_data))
 
             except Exception as e:
                 print(f"❌ Error sending WebSocket data: {e}")
@@ -54,3 +64,4 @@ async def websocket_endpoint(ws: WebSocket):
         print(f"❌ WebSocket error: {e}")
     finally:
         print("🔚 WebSocket connection ended")
+
