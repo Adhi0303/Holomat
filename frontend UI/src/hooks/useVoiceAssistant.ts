@@ -145,22 +145,24 @@ export function useVoiceAssistant() {
 
             if (event.error === 'network') {
                 networkRetryRef.current++
-                if (networkRetryRef.current > 3) {
-                    console.warn('Speech: max network retries reached, stopping.')
+                if (networkRetryRef.current > 5) {
+                    console.warn('Speech: max network retries reached, pausing voice recognition.')
                     shouldListenRef.current = false
                     setIsListening(false)
                     setJarvisState('idle')
                     networkRetryRef.current = 0
                     return
                 }
-                console.warn(`Speech network error - retry ${networkRetryRef.current}/3...`)
+                // Exponential backoff: 2s, 4s, 8s, 16s, 32s
+                const delay = Math.pow(2, networkRetryRef.current) * 1000
+                console.warn(`Speech network error - retry ${networkRetryRef.current}/5 in ${delay/1000}s...`)
                 setIsListening(false)
                 if (shouldListenRef.current && !isSpeakingRef.current) {
                     setTimeout(() => {
                         if (shouldListenRef.current && !isSpeakingRef.current) {
                             try { recognition.start() } catch (_e) { /* already started */ }
                         }
-                    }, 2000)
+                    }, delay)
                 }
                 return
             }

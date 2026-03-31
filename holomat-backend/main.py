@@ -24,6 +24,7 @@ from api.websocket import ws_router
 from api.testing import router as testing_router
 from api.image_gen import router as image_gen_router
 from api.model_gen import router as model_gen_router
+from api.canvas import router as canvas_router
 
 app = FastAPI(title="HoloMat API")
 
@@ -38,6 +39,7 @@ app.add_middleware(
 STATIC_DIR = BASE_DIR / "static"
 STATIC_DIR.mkdir(exist_ok=True)
 (STATIC_DIR / "generated").mkdir(exist_ok=True)
+(STATIC_DIR / "models").mkdir(exist_ok=True)  # GLB model output directory
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 app.include_router(sensors_router, prefix="/api")
@@ -46,6 +48,7 @@ app.include_router(jarvis_router, prefix="/api")
 app.include_router(testing_router, prefix="/api")
 app.include_router(image_gen_router, prefix="/api")
 app.include_router(model_gen_router, prefix="/api")
+app.include_router(canvas_router, prefix="/api")
 app.include_router(ws_router)
 
 @app.get("/")

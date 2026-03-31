@@ -1,77 +1,102 @@
 """
-model_gen.py — 3D Model Generation via Tripo3D API
-Uses Tripo3D's official Python SDK for image-to-model conversion.
-Flow: Download image -> Format -> SDK upload_file -> SDK image_to_model -> Return GLB URL
+model_gen.py — 3D Model Generation via Stability AI (Stable Fast 3D)
+Generates high-quality 3D assets from a single 2D input image in < 5 seconds.
+
+Flow:
+  1. Resolve image_url (relative → absolute, or use as-is)
+  2. Download image bytes via httpx
+  3. POST multipart/form-data to Stability AI v2beta/3d/stable-fast-3d
+  4. Save response content directly to /static/models/
+  5. Return local /static/models/model_{uuid}.glb
 """
 import os
-import io
+import uuid
 import httpx
-import tempfile
-from PIL import Image
+from pathlib import Path
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException
 from loguru import logger
-from tripo3d import TripoClient, TaskStatus
 
-TRIPO_API_KEY = os.getenv("TRIPO_API_KEY", "").strip()
+STABILITY_API_KEY = os.getenv("STABILITY_API_KEY", "").strip()
+STABILITY_URL     = "https://api.stability.ai/v2beta/3d/stable-fast-3d"
+
+# Local backend base URL — used to resolve relative image paths from the frontend
+BACKEND_BASE  = os.getenv("BACKEND_BASE_URL", "http://127.0.0.1:8001")
+
+# Where we save downloaded GLB files (served via /static)
+BASE_DIR   = Path(__file__).resolve().parent.parent
+MODELS_DIR = BASE_DIR / "static" / "models"
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter()
 
+
 class ModelRequest(BaseModel):
-    image_url: str
+    image_url: str  # accepts relative (/static/...) or absolute (http://...)
+
+
+def _abs_url(image_url: str) -> str:
+    """Convert a relative URL to an absolute one using the backend base."""
+    if image_url.startswith("http://") or image_url.startswith("https://"):
+        return image_url
+    # Relative path from frontend (e.g. /static/generated/abc.png)
+    return f"{BACKEND_BASE}{image_url}"
+
 
 @router.post("/generate-3d")
 async def generate_3d_model(req: ModelRequest):
-    if not TRIPO_API_KEY:
-        raise HTTPException(status_code=500, detail="TRIPO_API_KEY not configured in .env")
+    if not STABILITY_API_KEY:
+        raise HTTPException(status_code=500, detail="STABILITY_API_KEY not configured in .env")
+
+    abs_image_url = _abs_url(req.image_url)
 
     try:
-        # 1. Download the image from URL
-        logger.info(f"[3D Gen] Downloading image: {req.image_url}")
-        async with httpx.AsyncClient() as http_client:
-            img_res = await http_client.get(req.image_url, timeout=30.0)
-            img_res.raise_for_status()
-            
-            # Convert any image format to pristine PNG using Pillow
-            image = Image.open(io.BytesIO(img_res.content))
-            if image.mode != "RGB":
-                image = image.convert("RGB")
-            
-            # Save to temp file for Tripo SDK
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                image.save(tmp, format="PNG")
-                tmp_path = tmp.name
+        # ── Step 1: Download image ──────────────────────────────────────────
+        logger.info(f"[3D Gen] Downloading image: {abs_image_url}")
+        async with httpx.AsyncClient(timeout=30.0) as http:
+            resp = await http.get(abs_image_url)
+            resp.raise_for_status()
+            image_bytes = resp.content
 
-        try:
-            logger.info("[3D Gen] Starting Tripo SDK workflow...")
-            async with TripoClient(api_key=TRIPO_API_KEY) as client:
-                # 2. Upload Image
-                logger.info(f"[3D Gen] Uploading image {tmp_path}")
-                file_info = await client.upload_file(tmp_path)
-                if isinstance(file_info, dict):
-                    image_token = file_info.get("image_token") or file_info.get("data", {}).get("image_token")
-                else:
-                    image_token = getattr(file_info, "image_token", str(file_info))
-                
-                # 3. Start task
-                logger.info("[3D Gen] Starting image_to_model task...")
-                task_id = await client.image_to_model(
-                    file_token=image_token
-                )
-                logger.info(f"[3D Gen] Task started: {task_id}. Polling...")
+        # ── Step 2: Send to Stability AI ─────────────────────────────────────
+        logger.info("[3D Gen] Sending to Stability AI (Stable Fast 3D)...")
+        
+        headers = {
+            "Authorization": f"Bearer {STABILITY_API_KEY}",
+            # Optional: Add any app tracking headers if needed
+            "stability-client-id": "holomat-ui",
+            "stability-client-version": "1.0.0"
+        }
+        
+        files = {
+            "image": ("image.png", image_bytes, "image/png")
+        }
 
-                # 4. Wait for completion
-                task = await client.wait_for_task(task_id, verbose=True)
-                
-                if task.status == TaskStatus.SUCCESS:
-                    model_url = task.result.model.url
-                    logger.info(f"[3D Gen] Complete! URL: {model_url}")
-                    return {"model_url": model_url}
-                else:
-                    raise Exception(f"Tripo Task failed: {task.status}")
-        finally:
-            os.remove(tmp_path)
+        async with httpx.AsyncClient(timeout=60.0) as http:
+            # We don't use typical request kwargs for files, httpx expects `files=...`
+            stability_resp = await http.post(
+                STABILITY_URL,
+                headers=headers,
+                files=files
+            )
 
+        if stability_resp.status_code != 200:
+            error_msg = f"Stability AI error ({stability_resp.status_code}): {stability_resp.text}"
+            logger.error(f"[3D Gen] {error_msg}")
+            raise HTTPException(status_code=502, detail=error_msg)
+
+        # ── Step 3: Save GLB ─────────────────────────────────────────────────
+        task_id = uuid.uuid4().hex[:8]
+        filename = f"model_sf3d_{task_id}.glb"
+        local_path = MODELS_DIR / filename
+
+        local_path.write_bytes(stability_resp.content)
+        logger.info(f"[3D Gen] ✅ GLB saved → {local_path} ({len(stability_resp.content)} bytes)")
+
+        return {"model_url": f"/static/models/{filename}"}
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"[3D Gen] Error: {e}")
+        logger.exception(f"[3D Gen] Unexpected error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

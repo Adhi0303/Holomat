@@ -16,6 +16,17 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 uvicorn==0.40.0
 websockets==16.0
+# Image processing (model_gen.py)
 Pillow>=10.0.0
+
+# Structured logging (model_gen.py, image_gen.py)
 loguru>=0.7.0
+
+# Tripo3D integration
 tripo3d>=0.1.0
+
+# Async file I/O
+aiofiles>=23.0.0
+
+# Multipart form uploads
+python-multipart>=0.0.9

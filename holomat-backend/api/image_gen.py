@@ -41,8 +41,10 @@ STYLE_PROMPTS = {
 
 
 class ImageGenRequest(BaseModel):
-    prompt: str
+    prompt: str = ""
     style: str = "holographic"
+    base64_image: str | None = None
+    engine: str = "auto"
 
 
 class ImageGenResponse(BaseModel):
@@ -55,13 +57,13 @@ class ImageGenResponse(BaseModel):
 
 # ─── Engine 1: Gemini ────────────────────────────────────────────────────────
 
-async def _try_gemini(full_prompt: str) -> bytes | None:
+async def _try_gemini(full_prompt: str, model_name: str = "models/gemini-3.1-flash-image-preview") -> bytes | None:
     from google import genai
     from google.genai import types
 
     client = genai.Client(api_key=GEMINI_API_KEY)
     response = client.models.generate_content(
-        model="gemini-3.1-flash-image-preview",
+        model=model_name,
         contents=full_prompt,
         config=types.GenerateContentConfig(
             response_modalities=["TEXT", "IMAGE"]
@@ -73,15 +75,42 @@ async def _try_gemini(full_prompt: str) -> bytes | None:
     return None
 
 
+async def _try_gemini_vision(base64_image: str) -> str:
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    
+    # Strip data:image/...;base64,
+    if "," in base64_image:
+        base64_image = base64_image.split(",", 1)[1]
+    image_bytes = base64.b64decode(base64_image)
+
+    prompt = (
+        "Describe the single primary physical object in this image in extreme, accurate detail. "
+        "Include its material, colors, shape, and defining features. "
+        "Ignore the background entirely. Return ONLY the description."
+    )
+    
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[
+            prompt,
+            types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg",)
+        ]
+    )
+    return response.text.strip()
+
+
 # ─── Engine 2: Pollinations.ai ───────────────────────────────────────────────
 
-def _pollinations_url(full_prompt: str) -> str:
+def _pollinations_url(full_prompt: str, model_name: str = "flux") -> str:
     import urllib.parse
     encoded = urllib.parse.quote(full_prompt)
     seed    = uuid.uuid4().int % 999999
     url = (
-        f"https://gen.pollinations.ai/image/{encoded}"
-        f"?width=768&height=768&model=flux&seed={seed}&nologo=true"
+        f"https://image.pollinations.ai/prompt/{encoded}"
+        f"?width=768&height=768&model={model_name}&seed={seed}&nologo=true"
     )
     if POLLINATIONS_TOKEN:
         url += f"&key={POLLINATIONS_TOKEN}"  # API requires ?key= not ?token=
@@ -92,16 +121,39 @@ def _pollinations_url(full_prompt: str) -> str:
 
 @router.post("/generate-image", response_model=ImageGenResponse)
 async def generate_image(req: ImageGenRequest):
+    # If base64 image provided, extract vision description to use as prompt
+    if req.base64_image and GEMINI_API_KEY:
+        try:
+            print("[ImageGen] Using Gemini Vision to describe webcam image...")
+            vision_desc = await _try_gemini_vision(req.base64_image)
+            print(f"[ImageGen] Vision Description: {vision_desc}")
+            req.prompt = vision_desc  # Override empty prompt with vision description
+        except Exception as e:
+            print(f"[ImageGen] Vision processing failed → {e}")
+            return ImageGenResponse(success=False, error="AI Vision processing failed.")
+
     if not req.prompt.strip():
         return ImageGenResponse(success=False, error="Prompt cannot be empty.")
 
     style_suffix = STYLE_PROMPTS.get(req.style, STYLE_PROMPTS["holographic"])
     full_prompt  = f"{req.prompt}, {style_suffix}"
 
-    # ── Try Gemini first ──
-    if GEMINI_API_KEY:
+    # ── Handle Explicit Engine Requirements ──
+    if req.engine == "gemini-flash" and not GEMINI_API_KEY:
+        return ImageGenResponse(success=False, error="Gemini API Key is missing.")
+    if req.engine.startswith("pollinations") and not POLLINATIONS_TOKEN:
+        return ImageGenResponse(success=False, error="Pollinations TOKEN is missing.")
+
+    # ── Engine 1: Gemini ──
+    gemini_models = {
+        "gemini-3.1-flash": "models/gemini-3.1-flash-image-preview",
+        "gemini-2.5-flash": "models/gemini-2.5-flash-image"
+    }
+
+    if GEMINI_API_KEY and (req.engine in gemini_models or req.engine == "auto"):
+        g_model = gemini_models.get(req.engine, "models/gemini-3.1-flash-image-preview")
         try:
-            img_bytes = await _try_gemini(full_prompt)
+            img_bytes = await _try_gemini(full_prompt, model_name=g_model)
             if img_bytes:
                 filename = f"{uuid.uuid4().hex}.png"
                 (STATIC_DIR / filename).write_bytes(img_bytes)
@@ -109,29 +161,37 @@ async def generate_image(req: ImageGenRequest):
                     success=True,
                     image_url=f"/static/generated/{filename}",
                     prompt_used=full_prompt,
-                    engine="gemini"
+                    engine=req.engine if req.engine != "auto" else "gemini-flash"
                 )
         except Exception as e:
             print(f"[ImageGen] Gemini failed → {str(e)[:100]}")
+            if req.engine in gemini_models:
+                return ImageGenResponse(success=False, error=f"Gemini Engine failed: {str(e)[:100]}")
 
-    # ── Fallback: Pollinations.ai ──
-    if POLLINATIONS_TOKEN:
+    # ── Engine 2: Pollinations.ai ──
+    pollination_models = {
+        "pollinations-flux": "flux",
+        "pollinations-klein": "flux-klein",
+        "pollinations-gpt": "gpt-image"
+    }
+    
+    if POLLINATIONS_TOKEN and (req.engine in pollination_models or req.engine == "auto"):
         # Authenticated — return URL directly (browser loads image)
-        poll_url = _pollinations_url(full_prompt)
+        p_model = pollination_models.get(req.engine, "flux")
+        poll_url = _pollinations_url(full_prompt, model_name=p_model)
         return ImageGenResponse(
             success=True,
             image_url=poll_url,
             prompt_used=full_prompt,
-            engine="pollinations"
+            engine=req.engine if req.engine != "auto" else "pollinations-flux"
         )
 
     # ── Both unavailable ──
     return ImageGenResponse(
         success=False,
         error=(
-            "Gemini quota exhausted for today. "
-            "To enable a fallback: get a FREE token at https://enter.pollinations.ai "
-            "and add POLLINATIONS_TOKEN=your_token to holomat-backend/.env"
+            "No valid generative models available. "
+            "Gemini quota exhausted or Pollinations API unavailable."
         )
     )
 

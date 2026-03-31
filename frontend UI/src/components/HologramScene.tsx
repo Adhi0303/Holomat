@@ -1,6 +1,6 @@
 import { Suspense, useRef } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls, Float, Sparkles, useGLTF } from '@react-three/drei'
+import { OrbitControls, Float, Sparkles, useGLTF, Environment } from '@react-three/drei'
 import * as THREE from 'three'
 
 // Holographic material with glow effect
@@ -214,8 +214,10 @@ export function HologramScene({
     showParticles = true,
     showGrid = true
 }: HologramSceneProps) {
+    const isCustomModel = modelType.startsWith('http') || modelType.startsWith('/static/')
+
     const renderModel = () => {
-        if (modelType.startsWith('http')) {
+        if (isCustomModel) {
             return <CustomGLBModel url={modelType} />
         }
         switch (modelType) {
@@ -242,20 +244,33 @@ export function HologramScene({
             gl={{ alpha: true, antialias: true }}
         >
             <Suspense fallback={null}>
-                {/* Lighting */}
-            <ambientLight intensity={0.3} />
-            <pointLight position={[10, 10, 10]} intensity={0.5} color="#00d4ff" />
-            <pointLight position={[-10, -10, -10]} intensity={0.3} color="#00f5ff" />
-            <spotLight
-                position={[0, 5, 0]}
-                angle={0.5}
-                penumbra={1}
-                intensity={0.5}
-                color="#00d4ff"
-            />
+            {/* Lighting */}
+            {!isCustomModel ? (
+                <>
+                    <ambientLight intensity={0.3} />
+                    <pointLight position={[10, 10, 10]} intensity={0.5} color="#00d4ff" />
+                    <pointLight position={[-10, -10, -10]} intensity={0.3} color="#00f5ff" />
+                    <spotLight
+                        position={[0, 5, 0]}
+                        angle={0.5}
+                        penumbra={1}
+                        intensity={0.5}
+                        color="#00d4ff"
+                    />
+                </>
+            ) : (
+                <>
+                    <ambientLight intensity={1.5} color="#ffffff" />
+                    <directionalLight position={[5, 10, 5]} intensity={2.0} color="#ffffff" />
+                    <directionalLight position={[-5, 5, -5]} intensity={1.5} color="#ffffff" />
+                </>
+            )}
 
             {/* Model */}
             {renderModel()}
+
+            {/* Environment (CRITICAL for PBR materials so they don't look black) */}
+            {isCustomModel && <Environment preset="city" />}
 
             {/* Effects */}
             {showParticles && <ParticleField />}

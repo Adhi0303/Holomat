@@ -16,7 +16,7 @@ import { JarvisTerminal } from './components/JarvisTerminal'
 import { VirtualKeyboard } from './components/VirtualKeyboard'
 
 // Mode Components
-import { ScanMode, MeasureMode, SettingsMode, ExportMode, ModelMode, DataVisualizationMode } from './components/modes'
+import { ScanMode, MeasureMode, SettingsMode, ExportMode, ModelMode, DataVisualizationMode, CanvasMode } from './components/modes'
 import { DesignMode } from './components/DesignMode'
 
 // Icons
@@ -193,6 +193,7 @@ function App() {
               )}
               {activeMode === 'scan'      && <ScanMode />}
               {activeMode === 'model'     && <ModelMode />}
+              {activeMode === 'canvas'    && <CanvasMode />}
               {activeMode === 'measure'   && <MeasureMode />}
               {activeMode === 'analytics' && <DataVisualizationMode />}
               {activeMode === 'settings'  && <SettingsMode />}

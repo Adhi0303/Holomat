@@ -1,0 +1,15 @@
+/* ScanningScreen CSS Placeholder */
+.scanning-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+.video-container {
+  position: relative;
+}
+.webcam-feed {
+  max-width: 100%;
+  border-radius: 8px;
+}

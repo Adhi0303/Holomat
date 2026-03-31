@@ -2,7 +2,7 @@
  * ModeNavTabs — Zone 3 (Right) Navigation
  * Vertical tab list replacing the circular dome menu
  */
-import { Camera, Box, Ruler, BarChart3, Settings, Download, Mic, Keyboard, Home, Wifi, WifiOff, Radio, Sparkles } from 'lucide-react'
+import { Camera, Box, Ruler, BarChart3, Settings, Download, Mic, Keyboard, Home, Wifi, WifiOff, Radio, Sparkles, Palette } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 
 interface ModeNavTabsProps {
@@ -20,6 +20,7 @@ const modeItems = [
   { id: 'scan',      icon: Camera,   label: 'Scan'      },
   { id: 'model',     icon: Box,      label: '3D Model'  },
   { id: 'design',    icon: Sparkles, label: 'Design'    },
+  { id: 'canvas',    icon: Palette,  label: 'Canvas'    },
   { id: 'measure',   icon: Ruler,    label: 'Measure'   },
   { id: 'analytics', icon: BarChart3, label: 'Analytics' },
   { id: 'settings',  icon: Settings, label: 'Settings'  },

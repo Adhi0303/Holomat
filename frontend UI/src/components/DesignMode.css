@@ -23,8 +23,43 @@
 .design-style-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 12px;
   flex-wrap: wrap;
+  width: 100%;
+}
+
+.style-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.design-engine-select {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 212, 255, 0.08);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  padding: 2px 10px;
+  border-radius: 2px;
+}
+
+.design-engine-select select {
+  background: transparent;
+  border: none;
+  color: var(--color-primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  outline: none;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.design-engine-select select option {
+  background: #000c18;
+  color: #fff;
 }
 
 .design-label {

@@ -11,6 +11,12 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      // Proxy /static so GLB models served by FastAPI are loadable from React
+      '/static': {
+        target: 'http://127.0.0.1:8001',
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
 })

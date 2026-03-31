@@ -25,8 +25,9 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState<string | null>(null)
   const [promptUsed, setPromptUsed] = useState('')
-  const [engine, setEngine]     = useState<string>('')
   const [isGenerating3D, setIsGenerating3D] = useState(false)
+  const [engineSelector, setEngineSelector] = useState('auto')
+  const [runtimeEngine, setRuntimeEngine] = useState<string>('')
 
   const generate = async () => {
     if (!prompt.trim() || loading) return
@@ -38,14 +39,14 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
       const res = await fetch('/api/generate-image', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ prompt: prompt.trim(), style }),
+        body:    JSON.stringify({ prompt: prompt.trim(), style, engine: engineSelector }),
       })
       const data = await res.json()
 
       if (data.success) {
         setImageUrl(data.image_url)
         setPromptUsed(data.prompt_used)
-        setEngine(data.engine || 'ai')
+        setRuntimeEngine(data.engine || 'ai')
       } else {
         setError(data.error || 'Generation failed.')
       }
@@ -60,7 +61,7 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
     if (!imageUrl || isGenerating3D) return
     setIsGenerating3D(true)
     setError(null)
-    setEngine('tripo3d')
+    setRuntimeEngine('stability')
     try {
       const res = await fetch('/api/generate-3d', {
         method: 'POST',
@@ -78,7 +79,7 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
       setError('3D Network error. Task might still be running.')
     } finally {
       setIsGenerating3D(false)
-      setEngine(imageUrl.includes('pollinations') ? 'pollinations' : 'gemini') // revert engine display
+      setRuntimeEngine(imageUrl.includes('pollinations') ? 'pollinations' : 'gemini') // revert engine display
     }
   }
 
@@ -100,15 +101,29 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
       <div className="design-controls">
         <div className="design-style-bar">
           <span className="design-label">STYLE</span>
-          {STYLES.map(s => (
-            <button
-              key={s.id}
-              className={`design-style-btn${style === s.id ? ' active' : ''}`}
-              onClick={() => setStyle(s.id)}
-            >
-              <span>{s.icon}</span>{s.label}
-            </button>
-          ))}
+          <div className="style-list">
+            {STYLES.map(s => (
+              <button
+                key={s.id}
+                className={`design-style-btn${style === s.id ? ' active' : ''}`}
+                onClick={() => setStyle(s.id)}
+              >
+                <span>{s.icon}</span>{s.label}
+              </button>
+            ))}
+          </div>
+          
+          <div className="design-engine-select">
+             <span className="design-label">AI MODEL</span>
+             <select value={engineSelector} onChange={e => setEngineSelector(e.target.value)}>
+                <option value="auto">Automatic</option>
+                <option value="gemini-3.1-flash">Gemini 3.1 Flash</option>
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                <option value="pollinations-flux">Pollinations: Flux Core</option>
+                <option value="pollinations-klein">Pollinations: Flux Klein</option>
+                <option value="pollinations-gpt">Pollinations: GPT Image</option>
+             </select>
+          </div>
         </div>
 
         <div className="design-prompt-bar">
@@ -138,8 +153,8 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
             <div className="design-loading-ring" />
             <p className="design-loading-text">{isGenerating3D ? 'BUILDING 3D MESH' : 'AI RENDERING'}</p>
             <p className="design-loading-sub">
-              {engine === 'pollinations' ? 'Using Pollinations.ai (Gemini unavailable)...' :
-               engine === 'tripo3d' ? '~15s. Tripo AI building 1:1 scale model...' : 'Generating via Gemini AI...'}
+              {runtimeEngine === 'pollinations' ? 'Using Pollinations.ai (Gemini unavailable)...' :
+               runtimeEngine === 'stability' ? '~5s. Fast 3D Mesh Generation (Stability AI)...' : 'Generating via Gemini AI...'}
             </p>
           </div>
         ) : null}
@@ -157,7 +172,7 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
             <div className="design-result-bar">
               <span className="design-result-info">
                 <Image size={12} /> {style.toUpperCase()} ·{' '}
-                {engine === 'gemini' ? '⚡ GEMINI AI' : engine === 'pollinations' ? '🌐 POLLINATIONS.AI' : 'AI GENERATED'}
+                {runtimeEngine.includes('gemini') || runtimeEngine.includes('imagen') ? '⚡ GOOGLE AI' : runtimeEngine.includes('pollinations') ? '🌐 POLLINATIONS.AI' : 'AI GENERATED'}
               </span>
               <div className="design-result-actions">
                 <button className="design-action-btn" onClick={download} title="Download">
