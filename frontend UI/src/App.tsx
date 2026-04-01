@@ -327,8 +327,8 @@ function App() {
         )}
       </AnimatePresence>
 
-      {/* ── Hand Tracking Overlay (always active, positioned fixed) ── */}
-      <HandTrackingOverlay />
+      {/* ── Hand Tracking Overlay (only active on dashboard, not during boot) ── */}
+      <HandTrackingOverlay enabled={screenState === 'dashboard'} />
     </>
   )
 }

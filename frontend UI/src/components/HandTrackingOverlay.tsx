@@ -24,12 +24,21 @@ const GESTURE_ICONS: Record<HandGesture, string> = {
     pull:        '🤚 PULL',
 }
 
-export function HandTrackingOverlay() {
-    const [enabled, setEnabled] = useState(true)
+interface HandTrackingOverlayProps {
+    /** Only activate tracking once the dashboard is fully loaded */
+    enabled?: boolean
+}
+
+export function HandTrackingOverlay({ enabled: dashboardReady = false }: HandTrackingOverlayProps) {
+    const [trackingOn, setTrackingOn] = useState(true)
     const [collapsed, setCollapsed] = useState(false)
 
+    // Do NOT mount the camera or model during the boot / login flow
+    if (!dashboardReady) return null
+
     const { videoRef, canvasRef, status, error, currentGesture, handVisible } =
-        useHandTracking({ enabled })
+        useHandTracking({ enabled: trackingOn })
+
 
     return (
         <div className={`ht-overlay ${collapsed ? 'ht-collapsed' : ''}`}>
@@ -41,11 +50,11 @@ export function HandTrackingOverlay() {
                 </span>
                 <div className="ht-controls">
                     <button
-                        className={`ht-btn ${enabled ? 'ht-btn--on' : 'ht-btn--off'}`}
-                        onClick={() => setEnabled(e => !e)}
-                        title={enabled ? 'Disable tracking' : 'Enable tracking'}
+                        className={`ht-btn ${trackingOn ? 'ht-btn--on' : 'ht-btn--off'}`}
+                        onClick={() => setTrackingOn((v: boolean) => !v)}
+                        title={trackingOn ? 'Disable tracking' : 'Enable tracking'}
                     >
-                        {enabled ? 'ON' : 'OFF'}
+                        {trackingOn ? 'ON' : 'OFF'}
                     </button>
                     <button
                         className="ht-btn ht-btn--icon"
