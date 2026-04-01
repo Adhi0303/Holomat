@@ -8,6 +8,7 @@ import { HologramScene, ModelSelector, type ModelType } from './components/Holog
 import { StandbyScreen, ScanningScreen, WelcomeScreen, type ScreenState } from './screens'
 import { useApiData } from './hooks/useApiData'
 import { useVoiceAssistant } from './hooks/useVoiceAssistant'
+import { HandTrackingOverlay } from './components/HandTrackingOverlay'
 
 // New eDEX-UI Zone Components
 import { SystemInfoPanel } from './components/SystemInfoPanel'
@@ -326,8 +327,8 @@ function App() {
         )}
       </AnimatePresence>
 
-      {/* ── ZONE 4 (keyboard state): Inline Virtual Keyboard — fades in next to terminal ── */}
-      {/* Rendered inside the grid via AnimatePresence so it occupies zone--keyboard area */}
+      {/* ── Hand Tracking Overlay (always active, positioned fixed) ── */}
+      <HandTrackingOverlay />
     </>
   )
 }

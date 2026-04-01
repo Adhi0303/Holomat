@@ -24,7 +24,7 @@ interface AppState {
     }
 
     // Gesture Control
-    gesture: 'none' | 'swipe_left' | 'swipe_right' | 'push' | 'pull' | 'hover'
+    gesture: 'none' | 'swipe_left' | 'swipe_right' | 'push' | 'pull' | 'hover' | 'grab'
     currentModel: string
 
     // Connection
@@ -40,7 +40,7 @@ interface AppState {
     setLastResponse: (response: string) => void
     updateSystemStats: (stats: Partial<{ cpu: number; ram: number; temp: number }>) => void
     setOnline: (online: boolean) => void
-    setGesture: (gesture: 'none' | 'swipe_left' | 'swipe_right' | 'push' | 'pull' | 'hover') => void
+    setGesture: (gesture: 'none' | 'swipe_left' | 'swipe_right' | 'push' | 'pull' | 'hover' | 'grab') => void
     setCurrentModel: (model: string) => void
 }
 

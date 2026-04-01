@@ -62,6 +62,13 @@ export function useGestures() {
             case 'pull':
                 onPull()
                 break
+            case 'grab':
+                // Closed fist = confirm selection (same as push/select)
+                onPush()
+                break
+            case 'hover':
+                // Open palm = no action, just visual
+                break
         }
 
         // Reset gesture after processing

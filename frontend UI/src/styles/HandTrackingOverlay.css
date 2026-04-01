@@ -1,0 +1,175 @@
+/* ─── Hand Tracking Overlay ─────────────────────────────────────────────── */
+
+.ht-overlay {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+    width: 220px;
+    background: rgba(0, 10, 25, 0.85);
+    border: 1px solid rgba(0, 212, 255, 0.35);
+    border-radius: 10px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 0 24px rgba(0, 212, 255, 0.15), inset 0 0 12px rgba(0, 0, 0, 0.4);
+    font-family: 'Share Tech Mono', 'Courier New', monospace;
+    font-size: 11px;
+    color: #00d4ff;
+    transition: all 0.3s ease;
+    overflow: hidden;
+}
+
+.ht-collapsed {
+    width: 220px;
+}
+
+/* Header */
+.ht-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+    background: rgba(0, 212, 255, 0.05);
+}
+
+.ht-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    letter-spacing: 0.08em;
+    font-size: 10px;
+    color: rgba(0, 212, 255, 0.9);
+}
+
+.ht-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(0, 212, 255, 0.3);
+    transition: background 0.3s, box-shadow 0.3s;
+}
+
+.ht-dot--active {
+    background: #00ff88;
+    box-shadow: 0 0 8px #00ff88;
+    animation: ht-pulse 1.5s infinite;
+}
+
+@keyframes ht-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+}
+
+.ht-controls {
+    display: flex;
+    gap: 4px;
+}
+
+.ht-btn {
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    background: transparent;
+    color: #00d4ff;
+    cursor: pointer;
+    font-size: 9px;
+    font-family: inherit;
+    letter-spacing: 0.05em;
+    transition: all 0.2s;
+}
+
+.ht-btn:hover {
+    background: rgba(0, 212, 255, 0.15);
+    border-color: rgba(0, 212, 255, 0.6);
+}
+
+.ht-btn--on  { color: #00ff88; border-color: rgba(0, 255, 136, 0.4); }
+.ht-btn--off { color: rgba(0, 212, 255, 0.4); }
+.ht-btn--icon { font-size: 10px; padding: 2px 5px; }
+
+/* Feed area */
+.ht-feed {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.ht-video-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4/3;
+    overflow: hidden;
+    background: #000;
+}
+
+.ht-video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1); /* Mirror for selfie view */
+    opacity: 0.85;
+}
+
+.ht-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: scaleX(-1); /* Mirror to match video */
+    pointer-events: none;
+}
+
+/* Status overlays */
+.ht-status {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    z-index: 2;
+    font-size: 11px;
+    text-align: center;
+    padding: 8px;
+}
+
+.ht-status--loading  { color: #00d4ff; background: rgba(0,0,0,0.7); }
+.ht-status--error    { color: #ff4444; background: rgba(20,0,0,0.8); }
+.ht-status--disabled { color: rgba(0,212,255,0.4); background: rgba(0,0,0,0.6); }
+
+.ht-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(0, 212, 255, 0.2);
+    border-top-color: #00d4ff;
+    border-radius: 50%;
+    animation: ht-spin 0.8s linear infinite;
+}
+
+@keyframes ht-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Gesture label */
+.ht-gesture {
+    padding: 5px 10px;
+    text-align: center;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: rgba(0, 212, 255, 0.5);
+    transition: all 0.2s;
+    min-height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-top: 1px solid rgba(0, 212, 255, 0.1);
+}
+
+.ht-gesture--active {
+    color: #ffd700;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+    background: rgba(255, 215, 0, 0.05);
+}
