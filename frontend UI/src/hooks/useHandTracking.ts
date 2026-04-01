@@ -5,10 +5,11 @@
  * Detects hand landmarks at ~30 FPS, classifies them into gestures,
  * and pushes the result into the Zustand store via setGesture().
  *
- * No server needed. No Python. Completely runs on the GPU via WebAssembly.
+ * React StrictMode safe: uses a single cleanup-aware effect with a
+ * cancelled flag so the double-invocation doesn't break camera init.
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
     HandLandmarker,
     FilesetResolver,
@@ -31,22 +32,18 @@ export type TrackingStatus = 'loading' | 'ready' | 'error' | 'disabled'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-// MediaPipe landmark indices (from the 21-point hand model)
-const WRIST        = 0
-const INDEX_TIP    = 8
-const MIDDLE_TIP   = 12
-const RING_TIP     = 16
-const PINKY_TIP    = 20
-const INDEX_MCP    = 5  // knuckle
-const MIDDLE_MCP   = 9
-const RING_MCP     = 13
-const PINKY_MCP    = 17
+const WRIST      = 0
+const INDEX_TIP  = 8
+const MIDDLE_TIP = 12
+const RING_TIP   = 16
+const PINKY_TIP  = 20
+const INDEX_MCP  = 5
+const MIDDLE_MCP = 9
+const RING_MCP   = 13
+const PINKY_MCP  = 17
 
-// How far (0–1 normalised) a hand must move horizontally to count as a swipe
-const SWIPE_THRESHOLD = 0.08
-// How many frames we keep in the velocity window for swipe detection
-const VELOCITY_HISTORY = 6
-// Minimum frames between gesture detections (prevents rapid-fire)
+const SWIPE_THRESHOLD       = 0.08
+const VELOCITY_HISTORY      = 6
 const GESTURE_COOLDOWN_FRAMES = 20
 
 // ─── Gesture Classifier ───────────────────────────────────────────────────────
@@ -54,12 +51,10 @@ const GESTURE_COOLDOWN_FRAMES = 20
 interface Point { x: number; y: number; z: number }
 type Landmarks = Point[]
 
-/** Is this finger tip above its knuckle (i.e. extended)? */
 function isFingerExtended(tip: Point, mcp: Point): boolean {
-    return tip.y < mcp.y  // y=0 is top of frame
+    return tip.y < mcp.y
 }
 
-/** Classify the static hand shape */
 function classifyHandShape(landmarks: Landmarks): HandGesture {
     const indexUp  = isFingerExtended(landmarks[INDEX_TIP],  landmarks[INDEX_MCP])
     const middleUp = isFingerExtended(landmarks[MIDDLE_TIP], landmarks[MIDDLE_MCP])
@@ -68,9 +63,9 @@ function classifyHandShape(landmarks: Landmarks): HandGesture {
 
     const fingersUp = [indexUp, middleUp, ringUp, pinkyUp].filter(Boolean).length
 
-    if (fingersUp === 0)  return 'grab'   // closed fist
-    if (fingersUp >= 3)   return 'hover'  // open palm / hover
-    if (indexUp && !middleUp && !ringUp && !pinkyUp) return 'push' // one finger point
+    if (fingersUp === 0) return 'grab'
+    if (fingersUp >= 3)  return 'hover'
+    if (indexUp && !middleUp && !ringUp && !pinkyUp) return 'push'
     return 'hover'
 }
 
@@ -85,167 +80,183 @@ export function useHandTracking({ enabled = true }: UseHandTrackingOptions = {})
 
     const videoRef    = useRef<HTMLVideoElement>(null)
     const canvasRef   = useRef<HTMLCanvasElement>(null)
-    const landmarker  = useRef<HandLandmarker | null>(null)
     const rafId       = useRef<number>(0)
-    const wristHistory = useRef<number[]>([])  // stores wrist x positions
+    const wristHistory = useRef<number[]>([])
     const cooldown    = useRef(0)
+    const currentGestureRef = useRef<HandGesture>('none')
 
     const [status, setStatus]   = useState<TrackingStatus>('loading')
     const [error, setError]     = useState<string | null>(null)
     const [currentGesture, setCurrentGesture] = useState<HandGesture>('none')
     const [handVisible, setHandVisible]       = useState(false)
 
-    // ── Load the MediaPipe model ─────────────────────────────────────────────
+    // ── Single master effect: load → camera → detection loop ─────────────────
     useEffect(() => {
-        if (!enabled) { setStatus('disabled'); return }
+        if (!enabled) {
+            setStatus('disabled')
+            return
+        }
 
-        async function load() {
+        // Cancelled flag prevents async callbacks running after cleanup
+        let cancelled = false
+        let stream: MediaStream | null = null
+        let landmarker: HandLandmarker | null = null
+        let rafHandle = 0
+
+        setStatus('loading')
+
+        async function start() {
+            // 1. Load MediaPipe model
             try {
                 const vision = await FilesetResolver.forVisionTasks(
                     'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
                 )
-                landmarker.current = await HandLandmarker.createFromOptions(vision, {
+                if (cancelled) return
+
+                landmarker = await HandLandmarker.createFromOptions(vision, {
                     baseOptions: {
                         modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task',
                         delegate: 'GPU',
                     },
-                    runningMode:          'VIDEO',
-                    numHands:              1,
-                    minHandDetectionConfidence: 0.6,
-                    minHandPresenceConfidence:  0.6,
-                    minTrackingConfidence:      0.5,
+                    runningMode:                'VIDEO',
+                    numHands:                    1,
+                    minHandDetectionConfidence:  0.6,
+                    minHandPresenceConfidence:   0.6,
+                    minTrackingConfidence:       0.5,
                 })
-                setStatus('ready')
-                console.log('✋ MediaPipe HandLandmarker loaded successfully!')
+                if (cancelled) { landmarker.close(); return }
+                console.log('✋ MediaPipe HandLandmarker loaded!')
             } catch (err) {
-                console.error('MediaPipe load failed:', err)
-                setError('Failed to load hand tracking model')
-                setStatus('error')
+                if (!cancelled) {
+                    setError('Failed to load hand tracking model — check internet connection')
+                    setStatus('error')
+                }
+                return
             }
-        }
 
-        load()
-
-        return () => { landmarker.current?.close() }
-    }, [enabled])
-
-    // ── Start webcam ─────────────────────────────────────────────────────────
-    useEffect(() => {
-        if (status !== 'ready' || !videoRef.current) return
-
-        let stream: MediaStream | null = null
-
-        async function startCam() {
+            // 2. Open webcam
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
                     video: { width: 640, height: 480, facingMode: 'user' },
                     audio: false,
                 })
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream
-                    videoRef.current.play()
+                if (cancelled) { stream.getTracks().forEach(t => t.stop()); return }
+
+                // Attach stream to video element (poll until ref is available)
+                let attempts = 0
+                while (!videoRef.current && attempts < 20) {
+                    await new Promise(r => setTimeout(r, 50))
+                    attempts++
                 }
+                if (cancelled || !videoRef.current) return
+
+                videoRef.current.srcObject = stream
+                await videoRef.current.play()
+                if (cancelled) return
             } catch (err) {
-                setError('Camera permission denied')
-                setStatus('error')
-            }
-        }
-
-        startCam()
-
-        return () => { stream?.getTracks().forEach(t => t.stop()) }
-    }, [status])
-
-    // ── Processing loop ───────────────────────────────────────────────────────
-    const processFrame = useCallback(() => {
-        const video = videoRef.current
-        const canvas = canvasRef.current
-        const lm = landmarker.current
-
-        if (!video || !canvas || !lm || video.readyState < 2) {
-            rafId.current = requestAnimationFrame(processFrame)
-            return
-        }
-
-        const now = performance.now()
-        const result: HandLandmarkerResult = lm.detectForVideo(video, now)
-
-        // Draw skeleton on canvas
-        const ctx = canvas.getContext('2d')
-        if (ctx) {
-            canvas.width  = video.videoWidth
-            canvas.height = video.videoHeight
-            ctx.clearRect(0, 0, canvas.width, canvas.height)
-
-            if (result.landmarks.length > 0) {
-                drawLandmarks(ctx, result.landmarks[0], canvas.width, canvas.height)
-            }
-        }
-
-        // ── Gesture classification ──────────────────────────────────────────
-        if (result.landmarks.length === 0) {
-            setHandVisible(false)
-            wristHistory.current = []
-            if (currentGesture !== 'none') {
-                setCurrentGesture('none')
-                setGesture('none')
-                updateSensor('gesture', 'READY', 'ready')
-            }
-        } else {
-            setHandVisible(true)
-            const landmarks = result.landmarks[0]
-            const wristX = landmarks[WRIST].x
-
-            // Track wrist x position over time for swipe detection
-            wristHistory.current.push(wristX)
-            if (wristHistory.current.length > VELOCITY_HISTORY) {
-                wristHistory.current.shift()
+                if (!cancelled) {
+                    const msg = (err as Error).name === 'NotAllowedError'
+                        ? 'Camera permission denied — allow camera in browser settings'
+                        : 'Could not open camera'
+                    setError(msg)
+                    setStatus('error')
+                }
+                return
             }
 
-            // Detect swipe if enough history
-            let detected: HandGesture = 'none'
+            // 3. Start detection loop
+            setStatus('ready')
 
-            if (cooldown.current > 0) {
-                cooldown.current--
-            } else if (wristHistory.current.length >= VELOCITY_HISTORY) {
-                const delta = wristHistory.current[0] - wristHistory.current[wristHistory.current.length - 1]
+            function detect() {
+                if (cancelled) return
 
-                if (delta > SWIPE_THRESHOLD) {
-                    // Note: MediaPipe video is mirrored, so left/right are flipped
-                    detected = 'swipe_right'
-                } else if (delta < -SWIPE_THRESHOLD) {
-                    detected = 'swipe_left'
+                const video  = videoRef.current
+                const canvas = canvasRef.current
+
+                if (!video || !canvas || !landmarker || video.readyState < 2) {
+                    rafHandle = requestAnimationFrame(detect)
+                    return
+                }
+
+                const now    = performance.now()
+                const result: HandLandmarkerResult = landmarker.detectForVideo(video, now)
+
+                // Draw skeleton
+                const ctx = canvas.getContext('2d')
+                if (ctx) {
+                    canvas.width  = video.videoWidth
+                    canvas.height = video.videoHeight
+                    ctx.clearRect(0, 0, canvas.width, canvas.height)
+                    if (result.landmarks.length > 0) {
+                        drawLandmarks(ctx, result.landmarks[0], canvas.width, canvas.height)
+                    }
+                }
+
+                // Classify gesture
+                if (result.landmarks.length === 0) {
+                    setHandVisible(false)
+                    wristHistory.current = []
+                    if (currentGestureRef.current !== 'none') {
+                        currentGestureRef.current = 'none'
+                        setCurrentGesture('none')
+                        setGesture('none')
+                        updateSensor('gesture', 'READY', 'ready')
+                    }
                 } else {
-                    detected = classifyHandShape(landmarks)
+                    setHandVisible(true)
+                    const landmarks = result.landmarks[0]
+                    const wristX    = landmarks[WRIST].x
+
+                    wristHistory.current.push(wristX)
+                    if (wristHistory.current.length > VELOCITY_HISTORY) {
+                        wristHistory.current.shift()
+                    }
+
+                    if (cooldown.current > 0) {
+                        cooldown.current--
+                    } else if (wristHistory.current.length >= VELOCITY_HISTORY) {
+                        const delta = wristHistory.current[0] - wristHistory.current[wristHistory.current.length - 1]
+
+                        let detected: HandGesture = 'none'
+                        if (delta > SWIPE_THRESHOLD)       detected = 'swipe_right'
+                        else if (delta < -SWIPE_THRESHOLD) detected = 'swipe_left'
+                        else                               detected = classifyHandShape(landmarks)
+
+                        if (detected !== 'none' && detected !== currentGestureRef.current) {
+                            currentGestureRef.current = detected
+                            setCurrentGesture(detected)
+
+                            const storeGesture = detected === 'grab' ? 'push' : detected
+                            setGesture(storeGesture as Parameters<typeof setGesture>[0])
+
+                            const label = detected.replace('_', ' ').toUpperCase()
+                            updateSensor('gesture', label, 'active')
+                            console.log(`✋ Hand gesture: ${detected}`)
+                            cooldown.current = GESTURE_COOLDOWN_FRAMES
+                        }
+                    }
                 }
 
-                if (detected !== 'none' && detected !== currentGesture) {
-                    setCurrentGesture(detected)
-
-                    // Map to store gesture types (grab/hover stay as internal)
-                    const storeGesture = detected === 'grab' ? 'push' : detected
-                    setGesture(storeGesture as ReturnType<typeof setGesture extends (g: infer G) => void ? (g: G) => G : never>)
-
-                    // Update the gesture sensor in the sidebar
-                    const label = detected.replace('_', ' ').toUpperCase()
-                    updateSensor('gesture', label, 'active')
-
-                    console.log(`✋ Hand gesture: ${detected}`)
-                    cooldown.current = GESTURE_COOLDOWN_FRAMES
-                }
+                rafHandle = requestAnimationFrame(detect)
             }
+
+            rafHandle = requestAnimationFrame(detect)
         }
 
-        rafId.current = requestAnimationFrame(processFrame)
-    }, [setGesture, updateSensor, currentGesture])
+        start()
 
-    // Start / stop the loop
-    useEffect(() => {
-        if (status !== 'ready') return
-
-        rafId.current = requestAnimationFrame(processFrame)
-        return () => { cancelAnimationFrame(rafId.current) }
-    }, [status, processFrame])
+        // Cleanup: cancel everything on unmount / enabled toggle / StrictMode re-run
+        return () => {
+            cancelled = true
+            cancelAnimationFrame(rafHandle)
+            stream?.getTracks().forEach(t => t.stop())
+            landmarker?.close()
+            setStatus('loading')
+            setHandVisible(false)
+            setCurrentGesture('none')
+            currentGestureRef.current = 'none'
+        }
+    }, [enabled, setGesture, updateSensor])
 
     return { videoRef, canvasRef, status, error, currentGesture, handVisible }
 }
@@ -253,12 +264,12 @@ export function useHandTracking({ enabled = true }: UseHandTrackingOptions = {})
 // ─── Canvas Drawing ──────────────────────────────────────────────────────────
 
 const CONNECTIONS = [
-    [0,1],[1,2],[2,3],[3,4],       // thumb
-    [0,5],[5,6],[6,7],[7,8],       // index
-    [0,9],[9,10],[10,11],[11,12],  // middle
-    [0,13],[13,14],[14,15],[15,16],// ring
-    [0,17],[17,18],[18,19],[19,20],// pinky
-    [5,9],[9,13],[13,17],          // palm
+    [0,1],[1,2],[2,3],[3,4],
+    [0,5],[5,6],[6,7],[7,8],
+    [0,9],[9,10],[10,11],[11,12],
+    [0,13],[13,14],[14,15],[15,16],
+    [0,17],[17,18],[18,19],[19,20],
+    [5,9],[9,13],[13,17],
 ]
 
 function drawLandmarks(
@@ -267,7 +278,6 @@ function drawLandmarks(
     w: number,
     h: number
 ) {
-    // Connections
     ctx.strokeStyle = 'rgba(0, 212, 255, 0.7)'
     ctx.lineWidth   = 2
     for (const [a, b] of CONNECTIONS) {
@@ -276,8 +286,6 @@ function drawLandmarks(
         ctx.lineTo(landmarks[b].x * w, landmarks[b].y * h)
         ctx.stroke()
     }
-
-    // Joints
     for (const lm of landmarks) {
         ctx.beginPath()
         ctx.arc(lm.x * w, lm.y * h, 4, 0, Math.PI * 2)
