@@ -33,12 +33,13 @@ export function HandTrackingOverlay({ enabled: dashboardReady = false }: HandTra
     const [trackingOn, setTrackingOn] = useState(true)
     const [collapsed, setCollapsed] = useState(false)
 
-    // Do NOT mount the camera or model during the boot / login flow
-    if (!dashboardReady) return null
-
+    // Always call the hook (Rules of Hooks) — but pass enabled:false during boot
+    // so it won't open the camera or load the model until the dashboard is ready
     const { videoRef, canvasRef, status, error, currentGesture, handVisible } =
-        useHandTracking({ enabled: trackingOn })
+        useHandTracking({ enabled: dashboardReady && trackingOn })
 
+    // Don't render the widget at all during the boot/login flow
+    if (!dashboardReady) return null
 
     return (
         <div className={`ht-overlay ${collapsed ? 'ht-collapsed' : ''}`}>
