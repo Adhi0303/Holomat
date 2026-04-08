@@ -1,16 +1,21 @@
 /**
- * HandTrackingOverlay Component
- * ==============================
- * Renders a sci-fi style camera preview in the bottom corner of the UI.
+ * HandTrackingOverlay Component (v2 — Gesture Sync)
+ * ===================================================
+ * Renders a sci-fi camera preview in the bottom corner.
+ * Now sends detected gestures to the Pi backend via WebSocket
+ * so the projector display reacts to hand movements.
+ *
  * Shows:
  *   - Live webcam feed (mirrored)
- *   - MediaPipe skeleton landmarks drawn on top
+ *   - MediaPipe skeleton landmarks
  *   - Current detected gesture label
- *   - Toggle button to enable/disable tracking
+ *   - WebSocket sync status indicator
  */
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useHandTracking, type HandGesture } from '../hooks/useHandTracking'
+import { useGestureSync, type GestureType } from '../hooks/useGestureSync'
+import { useAppStore } from '../stores/appStore'
 import '../styles/HandTrackingOverlay.css'
 
 // Map gestures to emoji labels for the HUD
@@ -32,11 +37,27 @@ interface HandTrackingOverlayProps {
 export function HandTrackingOverlay({ enabled: dashboardReady = false }: HandTrackingOverlayProps) {
     const [trackingOn, setTrackingOn] = useState(true)
     const [collapsed, setCollapsed] = useState(false)
+    const { handSensitivity } = useAppStore()
 
-    // Always call the hook (Rules of Hooks) — but pass enabled:false during boot
-    // so it won't open the camera or load the model until the dashboard is ready
+    // Hand tracking from camera
     const { videoRef, canvasRef, status, error, currentGesture, handVisible } =
-        useHandTracking({ enabled: dashboardReady && trackingOn })
+        useHandTracking({ enabled: dashboardReady && trackingOn, sensitivity: handSensitivity })
+
+    // WebSocket sync to Pi backend (control mode = laptop sends gestures)
+    const { sendGesture, isConnected } = useGestureSync('control')
+
+    // Track the last gesture we sent to avoid spamming
+    const lastSentGesture = useRef<HandGesture>('none')
+
+    // Send gestures to Pi backend when they change
+    useEffect(() => {
+        if (currentGesture !== 'none' && currentGesture !== lastSentGesture.current) {
+            sendGesture(currentGesture as GestureType, 0.9)
+            lastSentGesture.current = currentGesture
+        } else if (currentGesture === 'none') {
+            lastSentGesture.current = 'none'
+        }
+    }, [currentGesture, sendGesture])
 
     // Don't render the widget at all during the boot/login flow
     if (!dashboardReady) return null
@@ -48,6 +69,11 @@ export function HandTrackingOverlay({ enabled: dashboardReady = false }: HandTra
                 <span className="ht-title">
                     <span className={`ht-dot ${handVisible ? 'ht-dot--active' : ''}`} />
                     HAND TRACKING
+                    {/* WebSocket sync indicator */}
+                    <span
+                        className={`ht-sync-dot ${isConnected ? 'ht-sync--connected' : 'ht-sync--disconnected'}`}
+                        title={isConnected ? 'Synced to projector' : 'Not connected to Pi'}
+                    />
                 </span>
                 <div className="ht-controls">
                     <button
@@ -102,6 +128,11 @@ export function HandTrackingOverlay({ enabled: dashboardReady = false }: HandTra
                     {/* Gesture label */}
                     <div className={`ht-gesture ${currentGesture !== 'none' ? 'ht-gesture--active' : ''}`}>
                         {GESTURE_ICONS[currentGesture]}
+                    </div>
+
+                    {/* Sync status bar */}
+                    <div className={`ht-sync-bar ${isConnected ? 'ht-sync-bar--active' : ''}`}>
+                        {isConnected ? '🔗 SYNCED TO PROJECTOR' : '⚠️ PROJECTOR OFFLINE'}
                     </div>
                 </div>
             )}
