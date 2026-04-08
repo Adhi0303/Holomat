@@ -1,6 +1,18 @@
 import { create } from 'zustand'
 import type { Sensor } from '../components/SensorStatus'
 
+// ─── Hand Cursor State ───────────────────────────────────────────────────────
+
+export interface HandCursorState {
+    screenX: number
+    screenY: number
+    visible: boolean
+    isPinching: boolean
+    isGrabbing: boolean
+}
+
+// ─── App State ───────────────────────────────────────────────────────────────
+
 interface AppState {
     // User
     isAuthenticated: boolean
@@ -27,6 +39,10 @@ interface AppState {
     gesture: 'none' | 'swipe_left' | 'swipe_right' | 'push' | 'pull' | 'hover' | 'grab'
     currentModel: string
 
+    // Hand Cursor (Virtual Hand Pointer)
+    handCursor: HandCursorState
+    handSensitivity: number  // 0.5 – 3.0
+
     // Connection
     isOnline: boolean
 
@@ -42,6 +58,8 @@ interface AppState {
     setOnline: (online: boolean) => void
     setGesture: (gesture: 'none' | 'swipe_left' | 'swipe_right' | 'push' | 'pull' | 'hover' | 'grab') => void
     setCurrentModel: (model: string) => void
+    setHandCursor: (cursor: HandCursorState) => void
+    setHandSensitivity: (sensitivity: number) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -79,6 +97,16 @@ export const useAppStore = create<AppState>((set) => ({
     gesture: 'none',
     currentModel: 'cube',
 
+    // Hand Cursor (Virtual Hand)
+    handCursor: {
+        screenX: 0,
+        screenY: 0,
+        visible: false,
+        isPinching: false,
+        isGrabbing: false,
+    },
+    handSensitivity: 1.5,
+
     // Actions
     setUser: (name, role) => set({ userName: name, userRole: role }),
 
@@ -96,7 +124,6 @@ export const useAppStore = create<AppState>((set) => ({
     })),
 
     setJarvisState: (jarvisState) => set((state) => {
-        // Also update the Jarvis sensor
         const sensors = state.sensors.map((sensor) =>
             sensor.id === 'jarvis'
                 ? {
@@ -127,4 +154,8 @@ export const useAppStore = create<AppState>((set) => ({
     setGesture: (gesture) => set({ gesture }),
 
     setCurrentModel: (currentModel) => set({ currentModel }),
+
+    setHandCursor: (handCursor) => set({ handCursor }),
+
+    setHandSensitivity: (handSensitivity) => set({ handSensitivity }),
 }))

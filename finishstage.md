@@ -337,8 +337,8 @@ Arduino → Pi    ← USB Cable (also powers Arduino)
 | S0 | Raspberry Pi OS Setup | ❌ Not Started |
 | S1 | Arduino Sensor Code | ✅ Complete |
 | S2 | Arduino Master Hub Sketch | ✅ Complete |
-| S3 | Pi Serial Bridge (Python) | ❌ Not Started |
-| S4 | Backend Integration | ❌ Not Started |
+| S3 | Pi Serial Bridge (Python) | ✅ Complete |
+| S4 | Backend Integration | ✅ Complete |
 | S5 | Camera Integration | ❌ Not Started |
 | S6 | Microphone + Voice | ❌ Not Started |
 | S7 | Frontend Network Config | ❌ Not Started |

@@ -9,6 +9,8 @@ import { StandbyScreen, ScanningScreen, WelcomeScreen, type ScreenState } from '
 import { useApiData } from './hooks/useApiData'
 import { useVoiceAssistant } from './hooks/useVoiceAssistant'
 import { HandTrackingOverlay } from './components/HandTrackingOverlay'
+import { VirtualHandCursor } from './components/VirtualHandCursor'
+import { useHandClick } from './hooks/useHandClick'
 
 // New eDEX-UI Zone Components
 import { SystemInfoPanel } from './components/SystemInfoPanel'
@@ -42,6 +44,9 @@ function App() {
   const { userName, lastResponse } = useAppStore()
   const { isConnected } = useApiData()
   const { isListening, isSpeaking, transcript, toggleListening, processTextCommand } = useVoiceAssistant()
+
+  // Activate hand→click dispatcher when on dashboard
+  useHandClick()
 
   // Track Jarvis responses for keyboard chat
   useEffect(() => {
@@ -329,6 +334,9 @@ function App() {
 
       {/* ── Hand Tracking Overlay (only active on dashboard, not during boot) ── */}
       <HandTrackingOverlay enabled={screenState === 'dashboard'} />
+
+      {/* ── Virtual Hand Cursor (full-screen pointer following hand position) ── */}
+      {screenState === 'dashboard' && <VirtualHandCursor />}
     </>
   )
 }

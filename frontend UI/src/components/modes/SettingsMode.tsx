@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
+import { useAppStore } from '../../stores/appStore'
 
 export function SettingsMode() {
+  const { handSensitivity, setHandSensitivity } = useAppStore()
   const [settings, setSettings] = useState({
     motionSensitivity: 75,
     lightThreshold: 50,
@@ -132,6 +134,24 @@ export function SettingsMode() {
                   {settings.gestureControl ? 'ON' : 'OFF'}
                 </button>
               </div>
+            </div>
+
+            <div className="setting-item">
+              <label>✋ Hand Cursor Sensitivity</label>
+              <div className="slider-container">
+                <input
+                  type="range"
+                  min="50"
+                  max="300"
+                  step="10"
+                  value={Math.round(handSensitivity * 100)}
+                  onChange={(e) => setHandSensitivity(parseInt(e.target.value) / 100)}
+                />
+                <span className="slider-value">{handSensitivity.toFixed(1)}x</span>
+              </div>
+              <span className="setting-hint" style={{ fontSize: '10px', color: 'rgba(0,212,255,0.5)', marginTop: '4px', display: 'block' }}>
+                Controls how much hand movement maps to cursor movement (0.5x–3.0x)
+              </span>
             </div>
           </motion.div>
         )}

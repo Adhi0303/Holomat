@@ -1,9 +1,75 @@
 import { Suspense, useRef } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Float, Sparkles, useGLTF, Environment } from '@react-three/drei'
 import * as THREE from 'three'
+import { useAppStore } from '../stores/appStore'
 
-// Holographic material with glow effect
+// ─── Hand Orbit Controls ─────────────────────────────────────────────────────
+// Replaces mouse-driven OrbitControls when a grab (fist) gesture is detected.
+// Tracks hand position delta and applies it as rotation to the camera orbit.
+
+function HandOrbitControls() {
+    const { handCursor } = useAppStore()
+    const controlsRef = useRef<any>(null)
+    const lastHandPos = useRef<{ x: number; y: number } | null>(null)
+    const { camera } = useThree()
+
+    // Sensitivity for hand → rotation mapping
+    const rotSpeed = 0.008
+
+    useFrame(() => {
+        if (!controlsRef.current) return
+
+        if (handCursor.isGrabbing && handCursor.visible) {
+            // Disable mouse orbit while hand is grabbing
+            controlsRef.current.enabled = false
+
+            if (lastHandPos.current) {
+                const dx = handCursor.screenX - lastHandPos.current.x
+                const dy = handCursor.screenY - lastHandPos.current.y
+
+                // Apply delta as rotation (invert X for natural feel)
+                controlsRef.current.minAzimuthAngle = -Infinity
+                controlsRef.current.maxAzimuthAngle = Infinity
+
+                // Manually rotate by adjusting the spherical target
+                const spherical = new THREE.Spherical().setFromVector3(
+                    camera.position.clone().sub(controlsRef.current.target)
+                )
+                spherical.theta -= dx * rotSpeed
+                spherical.phi   -= dy * rotSpeed
+
+                // Clamp polar angle
+                spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi))
+
+                const newPos = new THREE.Vector3().setFromSpherical(spherical).add(controlsRef.current.target)
+                camera.position.copy(newPos)
+                camera.lookAt(controlsRef.current.target)
+            }
+
+            lastHandPos.current = { x: handCursor.screenX, y: handCursor.screenY }
+        } else {
+            // Re-enable mouse orbit when hand releases
+            controlsRef.current.enabled = true
+            lastHandPos.current = null
+        }
+    })
+
+    return (
+        <OrbitControls
+            ref={controlsRef}
+            enablePan={false}
+            enableZoom={true}
+            minDistance={1}
+            maxDistance={20}
+            autoRotate={false}
+            autoRotateSpeed={0.5}
+        />
+    )
+}
+
+// ─── Holographic Material ────────────────────────────────────────────────────
+
 function HologramMaterial() {
     return (
         <meshStandardMaterial
@@ -18,7 +84,6 @@ function HologramMaterial() {
     )
 }
 
-// Glowing edges effect
 function GlowEdges({ geometry }: { geometry: THREE.BufferGeometry }) {
     return (
         <lineSegments>
@@ -28,18 +93,16 @@ function GlowEdges({ geometry }: { geometry: THREE.BufferGeometry }) {
     )
 }
 
-// Rotating cube model
+// ─── Models ──────────────────────────────────────────────────────────────────
+
 function CubeModel() {
     const meshRef = useRef<THREE.Mesh>(null)
-
     useFrame((state) => {
         if (meshRef.current) {
             meshRef.current.rotation.y = state.clock.elapsedTime * 0.3
         }
     })
-
     const geometry = new THREE.BoxGeometry(2, 1.5, 1.5)
-
     return (
         <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
             <group>
@@ -52,19 +115,15 @@ function CubeModel() {
     )
 }
 
-// Rotating sphere model
 function SphereModel() {
     const meshRef = useRef<THREE.Mesh>(null)
-
     useFrame((state) => {
         if (meshRef.current) {
             meshRef.current.rotation.y = state.clock.elapsedTime * 0.2
             meshRef.current.rotation.x = Math.sin(state.clock.elapsedTime * 0.3) * 0.2
         }
     })
-
     const geometry = new THREE.IcosahedronGeometry(1.2, 1)
-
     return (
         <Float speed={1.5} rotationIntensity={0.3} floatIntensity={0.3}>
             <group>
@@ -77,19 +136,15 @@ function SphereModel() {
     )
 }
 
-// Rotating torus model
 function TorusModel() {
     const meshRef = useRef<THREE.Mesh>(null)
-
     useFrame((state) => {
         if (meshRef.current) {
             meshRef.current.rotation.y = state.clock.elapsedTime * 0.4
             meshRef.current.rotation.x = state.clock.elapsedTime * 0.2
         }
     })
-
     const geometry = new THREE.TorusGeometry(1, 0.4, 16, 32)
-
     return (
         <Float speed={2} rotationIntensity={0.5} floatIntensity={0.4}>
             <group>
@@ -102,35 +157,28 @@ function TorusModel() {
     )
 }
 
-// Arc Reactor inspired model
 function ArcReactorModel() {
     const groupRef = useRef<THREE.Group>(null)
-
     useFrame((state) => {
         if (groupRef.current) {
             groupRef.current.rotation.z = state.clock.elapsedTime * 0.5
         }
     })
-
     return (
         <Float speed={1} rotationIntensity={0.2} floatIntensity={0.3}>
             <group ref={groupRef}>
-                {/* Outer ring */}
                 <mesh>
                     <torusGeometry args={[1.5, 0.08, 16, 32]} />
                     <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.8} />
                 </mesh>
-                {/* Middle ring */}
                 <mesh>
                     <torusGeometry args={[1.1, 0.06, 16, 32]} />
                     <meshStandardMaterial color="#00f5ff" emissive="#00f5ff" emissiveIntensity={0.6} />
                 </mesh>
-                {/* Inner ring */}
                 <mesh>
                     <torusGeometry args={[0.7, 0.04, 16, 32]} />
                     <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.8} />
                 </mesh>
-                {/* Core */}
                 <mesh>
                     <sphereGeometry args={[0.3, 16, 16]} />
                     <meshStandardMaterial
@@ -141,7 +189,6 @@ function ArcReactorModel() {
                         opacity={0.9}
                     />
                 </mesh>
-                {/* Spokes */}
                 {[0, 60, 120, 180, 240, 300].map((angle, i) => (
                     <mesh key={i} rotation={[0, 0, (angle * Math.PI) / 180]}>
                         <boxGeometry args={[0.05, 1.4, 0.02]} />
@@ -153,46 +200,29 @@ function ArcReactorModel() {
     )
 }
 
-// Grid floor
 function GridFloor() {
     return (
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2, 0]}>
             <planeGeometry args={[20, 20, 20, 20]} />
-            <meshBasicMaterial
-                color="#00d4ff"
-                wireframe
-                transparent
-                opacity={0.1}
-            />
+            <meshBasicMaterial color="#00d4ff" wireframe transparent opacity={0.1} />
         </mesh>
     )
 }
 
-// Particle effects
 function ParticleField() {
     return (
-        <Sparkles
-            count={100}
-            scale={8}
-            size={2}
-            speed={0.4}
-            color="#00d4ff"
-            opacity={0.5}
-        />
+        <Sparkles count={100} scale={8} size={2} speed={0.4} color="#00d4ff" opacity={0.5} />
     )
 }
 
-// Custom GLB Model loaded from URL
 function CustomGLBModel({ url }: { url: string }) {
     const { scene } = useGLTF(url)
     const groupRef = useRef<THREE.Group>(null)
-
     useFrame((state) => {
         if (groupRef.current) {
             groupRef.current.rotation.y = state.clock.elapsedTime * 0.2
         }
     })
-
     return (
         <Float speed={1.5} rotationIntensity={0.2} floatIntensity={0.2}>
             <primitive ref={groupRef} object={scene} scale={2} />
@@ -200,7 +230,8 @@ function CustomGLBModel({ url }: { url: string }) {
     )
 }
 
-// Model type
+// ─── Main Components ─────────────────────────────────────────────────────────
+
 export type ModelType = 'cube' | 'sphere' | 'torus' | 'reactor' | string
 
 interface HologramSceneProps {
@@ -276,15 +307,8 @@ export function HologramScene({
             {showParticles && <ParticleField />}
             {showGrid && <GridFloor />}
 
-            {/* Controls */}
-            <OrbitControls
-                enablePan={false}
-                enableZoom={true}
-                minDistance={1}
-                maxDistance={20}
-                autoRotate={false}
-                autoRotateSpeed={0.5}
-            />
+            {/* Controls — Hand-aware orbit controls */}
+            <HandOrbitControls />
             </Suspense>
         </Canvas>
     )

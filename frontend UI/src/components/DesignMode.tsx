@@ -1,8 +1,13 @@
 /* DesignMode.tsx — Gemini AI Image Generation Studio
    @frontend-specialist
+
+   Uses the Gemini REST API directly from the browser.
+   Default model: gemini-2.0-flash-exp (native image gen).
+   Fallback: Pollinations.ai (free, no API key needed).
 */
 import { useState } from 'react'
 import { Sparkles, Image, Loader, Download, RotateCcw, Box } from 'lucide-react'
+import { generateImage, type ImageEngine } from '../services/imageGenService'
 import './DesignMode.css'
 
 const STYLES = [
@@ -26,7 +31,7 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
   const [error, setError]       = useState<string | null>(null)
   const [promptUsed, setPromptUsed] = useState('')
   const [isGenerating3D, setIsGenerating3D] = useState(false)
-  const [engineSelector, setEngineSelector] = useState('auto')
+  const [engineSelector, setEngineSelector] = useState<ImageEngine>('auto')
   const [runtimeEngine, setRuntimeEngine] = useState<string>('')
 
   const generate = async () => {
@@ -36,22 +41,17 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
     setImageUrl(null)
 
     try {
-      const res = await fetch('/api/generate-image', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ prompt: prompt.trim(), style, engine: engineSelector }),
-      })
-      const data = await res.json()
+      const result = await generateImage(prompt.trim(), style, engineSelector)
 
-      if (data.success) {
-        setImageUrl(data.image_url)
-        setPromptUsed(data.prompt_used)
-        setRuntimeEngine(data.engine || 'ai')
+      if (result.success && result.imageUrl) {
+        setImageUrl(result.imageUrl)
+        setPromptUsed(result.promptUsed)
+        setRuntimeEngine(result.engine)
       } else {
-        setError(data.error || 'Generation failed.')
+        setError(result.error || 'Generation failed.')
       }
     } catch (e) {
-      setError('Network error — check backend connection.')
+      setError(`Unexpected error: ${(e as Error).message}`)
     } finally {
       setLoading(false)
     }
@@ -61,6 +61,7 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
     if (!imageUrl || isGenerating3D) return
     setIsGenerating3D(true)
     setError(null)
+    const prevEngine = runtimeEngine
     setRuntimeEngine('stability')
     try {
       const res = await fetch('/api/generate-3d', {
@@ -79,7 +80,7 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
       setError('3D Network error. Task might still be running.')
     } finally {
       setIsGenerating3D(false)
-      setRuntimeEngine(imageUrl.includes('pollinations') ? 'pollinations' : 'gemini') // revert engine display
+      setRuntimeEngine(prevEngine)
     }
   }
 
@@ -93,6 +94,13 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
     a.href = imageUrl
     a.download = `holomat-design-${Date.now()}.png`
     a.click()
+  }
+
+  const getEngineLabel = (): string => {
+    if (runtimeEngine.includes('gemini')) return '⚡ GEMINI AI'
+    if (runtimeEngine.includes('pollinations')) return '🌐 POLLINATIONS.AI'
+    if (runtimeEngine.includes('stability')) return '🔷 STABILITY AI'
+    return 'AI GENERATED'
   }
 
   return (
@@ -115,13 +123,13 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
           
           <div className="design-engine-select">
              <span className="design-label">AI MODEL</span>
-             <select value={engineSelector} onChange={e => setEngineSelector(e.target.value)}>
-                <option value="auto">Automatic</option>
-                <option value="gemini-3.1-flash">Gemini 3.1 Flash</option>
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                <option value="pollinations-flux">Pollinations: Flux Core</option>
-                <option value="pollinations-klein">Pollinations: Flux Klein</option>
-                <option value="pollinations-gpt">Pollinations: GPT Image</option>
+             <select value={engineSelector} onChange={e => setEngineSelector(e.target.value as ImageEngine)}>
+                <option value="auto">Auto (Gemini → Pollinations)</option>
+                <option value="gemini-2.5-flash-image">⚡ Gemini 2.5 Flash Image</option>
+                <option value="gemini-3.1-flash-image-preview">⚡ Gemini 3.1 Flash Preview</option>
+                <option value="gemini-3-pro-image-preview">⭐ Gemini 3 Pro Image</option>
+                <option value="pollinations-flux">🌐 Pollinations: Flux Core</option>
+                <option value="pollinations-flux-realism">🌐 Pollinations: Flux Realism</option>
              </select>
           </div>
         </div>
@@ -130,7 +138,7 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
           <Sparkles size={14} className="design-prompt-icon" />
           <input
             className="design-prompt-input"
-            placeholder="Describe what you want Gemini to create..."
+            placeholder="Describe what you want to create..."
             value={prompt}
             onChange={e => setPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -153,8 +161,11 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
             <div className="design-loading-ring" />
             <p className="design-loading-text">{isGenerating3D ? 'BUILDING 3D MESH' : 'AI RENDERING'}</p>
             <p className="design-loading-sub">
-              {runtimeEngine === 'pollinations' ? 'Using Pollinations.ai (Gemini unavailable)...' :
-               runtimeEngine === 'stability' ? '~5s. Fast 3D Mesh Generation (Stability AI)...' : 'Generating via Gemini AI...'}
+              {isGenerating3D
+                ? '~5s. Fast 3D Mesh Generation (Stability AI)...'
+                : runtimeEngine.includes('pollinations')
+                  ? 'Using Pollinations.ai fallback...'
+                  : 'Generating via Gemini AI...'}
             </p>
           </div>
         ) : null}
@@ -171,8 +182,7 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
             />
             <div className="design-result-bar">
               <span className="design-result-info">
-                <Image size={12} /> {style.toUpperCase()} ·{' '}
-                {runtimeEngine.includes('gemini') || runtimeEngine.includes('imagen') ? '⚡ GOOGLE AI' : runtimeEngine.includes('pollinations') ? '🌐 POLLINATIONS.AI' : 'AI GENERATED'}
+                <Image size={12} /> {style.toUpperCase()} · {getEngineLabel()}
               </span>
               <div className="design-result-actions">
                 <button className="design-action-btn" onClick={download} title="Download">
@@ -191,10 +201,10 @@ export function DesignMode({ initialPrompt = '', initialStyle = 'holographic' }:
             <div className="design-empty-icon">
               <Sparkles size={32} />
             </div>
-            <p className="design-empty-title">GEMINI DESIGN STUDIO</p>
+            <p className="design-empty-title">AI DESIGN STUDIO</p>
             <p className="design-empty-sub">
               Describe an object, machine, or scene above.<br />
-              Jarvis will route it directly to Gemini AI.
+              Uses Gemini 2.5 Flash Image with Pollinations fallback.
             </p>
             <div className="design-suggestions">
               {['Arc reactor blueprint', 'Robotic arm wireframe', 'Holographic Iron Man suit'].map(s => (

@@ -1,0 +1,173 @@
+/* ─── Virtual Hand Cursor ──────────────────────────────────────────────── */
+/* Full-screen overlay that renders a sci-fi cursor following the hand      */
+
+.vhc-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99998;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+/* ─── Cursor Dot ──────────────────────────────────────────────────────── */
+
+.vhc-cursor {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    transition: width 0.15s, height 0.15s, opacity 0.2s;
+    will-change: left, top;
+}
+
+/* Inner dot */
+.vhc-dot {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    transition: all 0.15s ease;
+}
+
+/* Outer ring */
+.vhc-ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 2px solid rgba(0, 212, 255, 0.6);
+    transition: all 0.15s ease;
+    animation: vhc-ring-pulse 2s ease-in-out infinite;
+}
+
+@keyframes vhc-ring-pulse {
+    0%, 100% { opacity: 0.6; transform: translate(-50%, -50%) scale(1); }
+    50%      { opacity: 0.3; transform: translate(-50%, -50%) scale(1.15); }
+}
+
+/* ─── States ──────────────────────────────────────────────────────────── */
+
+/* Hover / Open Hand — cyan ring */
+.vhc-cursor--hover .vhc-dot {
+    width: 8px;
+    height: 8px;
+    background: rgba(0, 212, 255, 0.9);
+    box-shadow: 0 0 12px rgba(0, 212, 255, 0.6), 0 0 24px rgba(0, 212, 255, 0.3);
+}
+
+.vhc-cursor--hover .vhc-ring {
+    width: 32px;
+    height: 32px;
+    border-color: rgba(0, 212, 255, 0.5);
+}
+
+/* Point — small precise dot */
+.vhc-cursor--point .vhc-dot {
+    width: 6px;
+    height: 6px;
+    background: rgba(0, 245, 255, 1);
+    box-shadow: 0 0 8px rgba(0, 245, 255, 0.8);
+}
+
+.vhc-cursor--point .vhc-ring {
+    width: 20px;
+    height: 20px;
+    border-color: rgba(0, 245, 255, 0.4);
+    border-width: 1px;
+}
+
+/* Pinch / Click — gold burst */
+.vhc-cursor--pinch .vhc-dot {
+    width: 14px;
+    height: 14px;
+    background: rgba(255, 215, 0, 1);
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.8), 0 0 40px rgba(255, 215, 0, 0.4);
+}
+
+.vhc-cursor--pinch .vhc-ring {
+    width: 40px;
+    height: 40px;
+    border-color: rgba(255, 215, 0, 0.7);
+    border-width: 2px;
+    animation: vhc-pinch-burst 0.3s ease-out;
+}
+
+@keyframes vhc-pinch-burst {
+    0%   { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(1.4); opacity: 0.3; }
+}
+
+/* Grab / Fist — orange glow */
+.vhc-cursor--grab .vhc-dot {
+    width: 12px;
+    height: 12px;
+    background: rgba(255, 107, 0, 0.9);
+    box-shadow: 0 0 16px rgba(255, 107, 0, 0.7), 0 0 32px rgba(255, 107, 0, 0.3);
+    border-radius: 4px;
+}
+
+.vhc-cursor--grab .vhc-ring {
+    width: 36px;
+    height: 36px;
+    border-color: rgba(255, 107, 0, 0.5);
+    border-style: dashed;
+    animation: vhc-grab-rotate 1s linear infinite;
+}
+
+@keyframes vhc-grab-rotate {
+    to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* Hidden state */
+.vhc-cursor--hidden {
+    opacity: 0;
+    transition: opacity 0.4s ease;
+}
+
+/* ─── Gesture Label ───────────────────────────────────────────────────── */
+
+.vhc-label {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Share Tech Mono', 'Courier New', monospace;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: rgba(0, 10, 25, 0.7);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    color: rgba(0, 212, 255, 0.8);
+    transition: all 0.2s;
+}
+
+.vhc-cursor--pinch .vhc-label {
+    color: #FFD700;
+    border-color: rgba(255, 215, 0, 0.4);
+}
+
+.vhc-cursor--grab .vhc-label {
+    color: #FF6B00;
+    border-color: rgba(255, 107, 0, 0.4);
+}
+
+/* ─── Trail Effect ────────────────────────────────────────────────────── */
+
+.vhc-trail {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: rgba(0, 212, 255, 0.3);
+    pointer-events: none;
+    animation: vhc-trail-fade 0.5s ease-out forwards;
+}
+
+@keyframes vhc-trail-fade {
+    0%   { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
+    100% { opacity: 0;   transform: translate(-50%, -50%) scale(0.2); }
+}

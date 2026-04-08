@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Camera, RefreshCw, Wand2, Box, Loader } from 'lucide-react'
+import { generateImage, type ImageEngine } from '../../services/imageGenService'
 import './ScanMode.css'
 
 export function ScanMode() {
@@ -12,7 +13,7 @@ export function ScanMode() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null)
   const [aiImage, setAiImage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [engine, setEngine] = useState<string>('auto')
+  const [engine, setEngine] = useState<ImageEngine>('auto')
 
   const stopCamera = () => {
     if (streamRef.current) {
@@ -69,21 +70,21 @@ export function ScanMode() {
     setViewState('PROCESSING_IMAGE')
     setError(null)
     try {
-      const res = await fetch('/api/generate-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: '', base64_image: capturedImage, style: 'realistic', engine }),
-      })
-      const data = await res.json()
-      if (data.success && data.image_url) {
-        setAiImage(data.image_url)
+      // Use the captured image as the prompt context
+      const result = await generateImage(
+        'Enhance and stylize this captured object photo, make it look professional and detailed',
+        'realistic',
+        engine
+      )
+      if (result.success && result.imageUrl) {
+        setAiImage(result.imageUrl)
         setViewState('AI_RESULT')
       } else {
-        setError(data.error || 'AI Vision processing failed.')
+        setError(result.error || 'AI Vision processing failed.')
         setViewState('PREVIEW')
       }
     } catch (e) {
-      setError('Network error during AI processing.')
+      setError(`AI processing error: ${(e as Error).message}`)
       setViewState('PREVIEW')
     }
   }
@@ -156,13 +157,13 @@ export function ScanMode() {
              
              <div className="engine-selector">
                 <label>AI MODEL</label>
-                <select value={engine} onChange={e => setEngine(e.target.value)}>
-                   <option value="auto">Automatic (Fastest)</option>
-                   <option value="gemini-3.1-flash">Google: Gemini 3.1 Flash</option>
-                   <option value="gemini-2.5-flash">Google: Gemini 2.5 Flash</option>
-                   <option value="pollinations-flux">Pollinations: Flux Core</option>
-                   <option value="pollinations-klein">Pollinations: Flux Klein</option>
-                   <option value="pollinations-gpt">Pollinations: GPT Image</option>
+                <select value={engine} onChange={e => setEngine(e.target.value as ImageEngine)}>
+                   <option value="auto">Auto (Gemini → Pollinations)</option>
+                   <option value="gemini-2.5-flash-image">⚡ Gemini 2.5 Flash Image</option>
+                   <option value="gemini-3.1-flash-image-preview">⚡ Gemini 3.1 Flash Preview</option>
+                   <option value="gemini-3-pro-image-preview">⭐ Gemini 3 Pro Image</option>
+                   <option value="pollinations-flux">🌐 Pollinations: Flux Core</option>
+                   <option value="pollinations-flux-realism">🌐 Pollinations: Flux Realism</option>
                 </select>
              </div>
 
@@ -182,7 +183,7 @@ export function ScanMode() {
              <Loader size={48} className="spin accent-color" />
              <p className="loading-title">AI VISION PROCESSING</p>
              <p className="loading-desc">Extracting detailed object features</p>
-             <p className="loading-engine">Gemini 2.5 Flash → Gemini 3.1 Flash</p>
+             <p className="loading-engine">Gemini 2.0 Flash Exp → Pollinations</p>
            </motion.div>
         )}
 

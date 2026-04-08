@@ -98,6 +98,10 @@ class SensorManager:
         """Returns 'arduino' or 'mock'."""
         return "arduino" if arduino_bridge.is_connected() else "mock"
 
+    def get_raw_arduino_data(self) -> dict:
+        """Returns the raw physical sensor cache directly from the Arduino bridge."""
+        return arduino_bridge.get_sensor_data()
+
 
 # ------------------------------------------------------------------
 # HELPERS

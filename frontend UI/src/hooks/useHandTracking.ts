@@ -1,12 +1,16 @@
 /**
- * useHandTracking Hook
- * =====================
+ * useHandTracking Hook (v2 — Virtual Cursor Edition)
+ * ====================================================
  * Runs Google MediaPipe HandLandmarker entirely inside the browser.
- * Detects hand landmarks at ~30 FPS, classifies them into gestures,
- * and pushes the result into the Zustand store via setGesture().
+ * Detects hand landmarks at ~30 FPS, classifies gestures, AND
+ * exports continuous hand position + pinch state for the virtual cursor.
  *
- * React StrictMode safe: uses a single cleanup-aware effect with a
- * cancelled flag so the double-invocation doesn't break camera init.
+ * New exports:
+ *   - handPosition { x, y }  — index finger tip in screen pixels
+ *   - isPinching             — thumb tip ↔ index tip distance < threshold
+ *   - isGrabbing             — all fingers closed (fist)
+ *
+ * React StrictMode safe: uses a single cleanup-aware effect.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -30,9 +34,15 @@ export type HandGesture =
 
 export type TrackingStatus = 'loading' | 'ready' | 'error' | 'disabled'
 
+export interface HandPosition {
+    x: number
+    y: number
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const WRIST      = 0
+const THUMB_TIP  = 4
 const INDEX_TIP  = 8
 const MIDDLE_TIP = 12
 const RING_TIP   = 16
@@ -42,14 +52,24 @@ const MIDDLE_MCP = 9
 const RING_MCP   = 13
 const PINKY_MCP  = 17
 
-const SWIPE_THRESHOLD       = 0.08
-const VELOCITY_HISTORY      = 6
+const SWIPE_THRESHOLD         = 0.08
+const VELOCITY_HISTORY        = 6
 const GESTURE_COOLDOWN_FRAMES = 20
+const PINCH_THRESHOLD         = 0.06   // normalized distance for pinch
+const LERP_FACTOR             = 0.35   // smoothing factor (0 = no move, 1 = instant)
 
-// ─── Gesture Classifier ───────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 interface Point { x: number; y: number; z: number }
 type Landmarks = Point[]
+
+function lerp(a: number, b: number, t: number): number {
+    return a + (b - a) * t
+}
+
+function dist2D(a: Point, b: Point): number {
+    return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2)
+}
 
 function isFingerExtended(tip: Point, mcp: Point): boolean {
     return tip.y < mcp.y
@@ -73,31 +93,44 @@ function classifyHandShape(landmarks: Landmarks): HandGesture {
 
 interface UseHandTrackingOptions {
     enabled?: boolean
+    sensitivity?: number  // 0.5 – 3.0, default 1.0
 }
 
-export function useHandTracking({ enabled = true }: UseHandTrackingOptions = {}) {
-    const { setGesture, updateSensor } = useAppStore()
+export function useHandTracking({
+    enabled = true,
+    sensitivity = 1.0,
+}: UseHandTrackingOptions = {}) {
+    const { setGesture, updateSensor, setHandCursor } = useAppStore()
 
     const videoRef    = useRef<HTMLVideoElement>(null)
     const canvasRef   = useRef<HTMLCanvasElement>(null)
-    const rafId       = useRef<number>(0)
     const wristHistory = useRef<number[]>([])
     const cooldown    = useRef(0)
     const currentGestureRef = useRef<HandGesture>('none')
+
+    // Smoothed cursor position (persists across frames)
+    const smoothPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
     const [status, setStatus]   = useState<TrackingStatus>('loading')
     const [error, setError]     = useState<string | null>(null)
     const [currentGesture, setCurrentGesture] = useState<HandGesture>('none')
     const [handVisible, setHandVisible]       = useState(false)
+    const [handPosition, setHandPosition]     = useState<HandPosition>({ x: 0, y: 0 })
+    const [isPinching, setIsPinching]         = useState(false)
+    const [isGrabbing, setIsGrabbing]         = useState(false)
+
+    // Sensitivity ref so detection loop picks up changes without re-init
+    const sensitivityRef = useRef(sensitivity)
+    sensitivityRef.current = sensitivity
 
     // ── Single master effect: load → camera → detection loop ─────────────────
     useEffect(() => {
         if (!enabled) {
             setStatus('disabled')
+            setHandCursor({ screenX: 0, screenY: 0, visible: false, isPinching: false, isGrabbing: false })
             return
         }
 
-        // Cancelled flag prevents async callbacks running after cleanup
         let cancelled = false
         let stream: MediaStream | null = null
         let landmarker: HandLandmarker | null = null
@@ -142,7 +175,6 @@ export function useHandTracking({ enabled = true }: UseHandTrackingOptions = {})
                 })
                 if (cancelled) { stream.getTracks().forEach(t => t.stop()); return }
 
-                // Attach stream to video element (poll until ref is available)
                 let attempts = 0
                 while (!videoRef.current && attempts < 20) {
                     await new Promise(r => setTimeout(r, 50))
@@ -181,7 +213,7 @@ export function useHandTracking({ enabled = true }: UseHandTrackingOptions = {})
                 const now    = performance.now()
                 const result: HandLandmarkerResult = landmarker.detectForVideo(video, now)
 
-                // Draw skeleton
+                // Draw skeleton on overlay canvas
                 const ctx = canvas.getContext('2d')
                 if (ctx) {
                     canvas.width  = video.videoWidth
@@ -192,9 +224,11 @@ export function useHandTracking({ enabled = true }: UseHandTrackingOptions = {})
                     }
                 }
 
-                // Classify gesture
+                // ─── No hand ─────────────────────────────────────────────
                 if (result.landmarks.length === 0) {
                     setHandVisible(false)
+                    setIsPinching(false)
+                    setIsGrabbing(false)
                     wristHistory.current = []
                     if (currentGestureRef.current !== 'none') {
                         currentGestureRef.current = 'none'
@@ -202,11 +236,61 @@ export function useHandTracking({ enabled = true }: UseHandTrackingOptions = {})
                         setGesture('none')
                         updateSensor('gesture', 'READY', 'ready')
                     }
+                    setHandCursor({
+                        screenX: smoothPos.current.x,
+                        screenY: smoothPos.current.y,
+                        visible: false,
+                        isPinching: false,
+                        isGrabbing: false,
+                    })
                 } else {
+                    // ─── Hand detected ───────────────────────────────────
                     setHandVisible(true)
                     const landmarks = result.landmarks[0]
                     const wristX    = landmarks[WRIST].x
 
+                    // ── Position: index finger tip → screen coordinates ──
+                    const indexTip = landmarks[INDEX_TIP]
+                    // MediaPipe x is 0(left)→1(right) but camera is mirrored
+                    const sens = sensitivityRef.current
+
+                    // Center-based mapping: 0.5 is center of camera
+                    // Multiply offset from center by sensitivity
+                    const rawX = 0.5 + (0.5 - indexTip.x) * sens
+                    const rawY = 0.5 + (indexTip.y - 0.5) * sens
+
+                    const targetX = Math.max(0, Math.min(1, rawX)) * window.innerWidth
+                    const targetY = Math.max(0, Math.min(1, rawY)) * window.innerHeight
+
+                    // Smooth with lerp
+                    smoothPos.current.x = lerp(smoothPos.current.x, targetX, LERP_FACTOR)
+                    smoothPos.current.y = lerp(smoothPos.current.y, targetY, LERP_FACTOR)
+
+                    setHandPosition({
+                        x: smoothPos.current.x,
+                        y: smoothPos.current.y,
+                    })
+
+                    // ── Pinch detection: thumb tip ↔ index tip ───────────
+                    const pinchDist = dist2D(landmarks[THUMB_TIP], landmarks[INDEX_TIP])
+                    const pinching = pinchDist < PINCH_THRESHOLD
+                    setIsPinching(pinching)
+
+                    // ── Grab detection (fist) ────────────────────────────
+                    const shape = classifyHandShape(landmarks)
+                    const grabbing = shape === 'grab'
+                    setIsGrabbing(grabbing)
+
+                    // ── Push to store for cursor overlay + click handler ─
+                    setHandCursor({
+                        screenX: smoothPos.current.x,
+                        screenY: smoothPos.current.y,
+                        visible: true,
+                        isPinching: pinching,
+                        isGrabbing: grabbing,
+                    })
+
+                    // ── Gesture classification (swipes + shapes) ─────────
                     wristHistory.current.push(wristX)
                     if (wristHistory.current.length > VELOCITY_HISTORY) {
                         wristHistory.current.shift()
@@ -220,7 +304,7 @@ export function useHandTracking({ enabled = true }: UseHandTrackingOptions = {})
                         let detected: HandGesture = 'none'
                         if (delta > SWIPE_THRESHOLD)       detected = 'swipe_right'
                         else if (delta < -SWIPE_THRESHOLD) detected = 'swipe_left'
-                        else                               detected = classifyHandShape(landmarks)
+                        else                               detected = shape
 
                         if (detected !== 'none' && detected !== currentGestureRef.current) {
                             currentGestureRef.current = detected
@@ -245,7 +329,6 @@ export function useHandTracking({ enabled = true }: UseHandTrackingOptions = {})
 
         start()
 
-        // Cleanup: cancel everything on unmount / enabled toggle / StrictMode re-run
         return () => {
             cancelled = true
             cancelAnimationFrame(rafHandle)
@@ -254,11 +337,24 @@ export function useHandTracking({ enabled = true }: UseHandTrackingOptions = {})
             setStatus('loading')
             setHandVisible(false)
             setCurrentGesture('none')
+            setIsPinching(false)
+            setIsGrabbing(false)
             currentGestureRef.current = 'none'
+            setHandCursor({ screenX: 0, screenY: 0, visible: false, isPinching: false, isGrabbing: false })
         }
-    }, [enabled, setGesture, updateSensor])
+    }, [enabled, setGesture, updateSensor, setHandCursor])
 
-    return { videoRef, canvasRef, status, error, currentGesture, handVisible }
+    return {
+        videoRef,
+        canvasRef,
+        status,
+        error,
+        currentGesture,
+        handVisible,
+        handPosition,
+        isPinching,
+        isGrabbing,
+    }
 }
 
 // ─── Canvas Drawing ──────────────────────────────────────────────────────────

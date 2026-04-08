@@ -75,6 +75,11 @@ def get_hardware_status():
         "message": "Arduino hardware active" if connected else "Using mock simulation"
     }
 
+@router.get("/sensors/raw")
+def get_raw_arduino_data():
+    """Get raw physical sensor readings directly from Arduino bridge"""
+    return sensor_manager.get_raw_arduino_data()
+
 @router.post("/sensors/scan/start")
 def start_biometric_scan():
     """Start biometric face scan"""
@@ -160,7 +165,7 @@ def export_sensor_data(export_config: dict):
         ]
     
     if "settings" in data_types:
-        export_data["settings"] = mock_sensors.settings
+        export_data["settings"] = sensor_manager.settings
     
     if "userProfiles" in data_types:
         export_data["user_profiles"] = [
