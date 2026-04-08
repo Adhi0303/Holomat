@@ -30,3 +30,10 @@ aiofiles>=23.0.0
 
 # Multipart form uploads
 python-multipart>=0.0.9
+
+# Arduino serial communication
+pyserial>=3.5
+
+# Voice recognition (USB mic → Vosk STT on Pi)
+vosk>=0.3.45
+pyaudio>=0.2.14

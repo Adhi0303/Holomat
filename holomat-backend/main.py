@@ -25,6 +25,8 @@ from api.testing import router as testing_router
 from api.image_gen import router as image_gen_router
 from api.model_gen import router as model_gen_router
 from api.canvas import router as canvas_router
+from hardware.brightness_controller import brightness_controller
+from hardware.voice_listener import voice_listener
 
 app = FastAPI(title="HoloMat API")
 
@@ -39,7 +41,7 @@ app.add_middleware(
 STATIC_DIR = BASE_DIR / "static"
 STATIC_DIR.mkdir(exist_ok=True)
 (STATIC_DIR / "generated").mkdir(exist_ok=True)
-(STATIC_DIR / "models").mkdir(exist_ok=True)  # GLB model output directory
+(STATIC_DIR / "models").mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 app.include_router(sensors_router, prefix="/api")
@@ -51,6 +53,30 @@ app.include_router(model_gen_router, prefix="/api")
 app.include_router(canvas_router, prefix="/api")
 app.include_router(ws_router)
 
+
+@app.on_event("startup")
+def on_startup():
+    """Start hardware background services."""
+    brightness_controller.start()
+
+    # Wire voice commands into Jarvis
+    def _handle_voice_command(text: str):
+        import httpx
+        try:
+            httpx.post(
+                "http://127.0.0.1:8001/api/jarvis/command",
+                json={"command": text},
+                timeout=5,
+            )
+        except Exception as e:
+            print(f"[HoloMat Voice] Jarvis relay error: {e}")
+
+    voice_listener.on_command(_handle_voice_command)
+    voice_listener.start()
+
+    print("[HoloMat] All hardware services initialized.")
+
+
 @app.get("/")
 def root():
-    return {"status": "HoloMat backend running"}
+    return {"status": "HoloMat backend running", "version": "2.0"}

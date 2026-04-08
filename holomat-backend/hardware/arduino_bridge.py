@@ -1,14 +1,12 @@
 """
-HoloMat Arduino Bridge
-======================
-Runs as a background thread. Connects to the Arduino via USB Serial,
-reads the JSON stream, and stores the latest sensor state in memory.
+HoloMat Arduino Bridge v2.0
+============================
+Bidirectional. Reads sensor JSON from Arduino AND sends commands back.
 
-The rest of the backend reads from `arduino_bridge.get_sensor_data()`
-instead of directly from the serial port.
-
-ARDUINO OUTPUT FORMAT (115200 baud, one line per 100ms):
-  {"motion":true,"distance":42.5,"zone":"GESTURE","light":78,"light_status":"BRIGHT","lcd":true,"uptime":12}
+READS:  {"motion":true,"distance":42.5,"zone":"GESTURE","light":78,"light_raw":800,...}
+SENDS:  {"cmd":"ir","action":"brightness_up"}
+        {"cmd":"lcd","line1":"HOLOMAT","line2":"Welcome Sir"}
+        {"cmd":"lcd_status","text":"STANDBY"}
 """
 
 import serial
@@ -17,36 +15,30 @@ import json
 import threading
 import time
 import platform
+import queue
 
 # ============================================================
 # CONFIGURATION
 # ============================================================
 BAUD_RATE     = 115200
-RECONNECT_SEC = 5      # How long to wait before retrying a failed connection
-DATA_TIMEOUT  = 3.0    # If no data in 3 seconds, consider Arduino disconnected
+RECONNECT_SEC = 5
+DATA_TIMEOUT  = 3.0
 
 
 def _find_arduino_port() -> str | None:
-    """
-    Auto-detect the Arduino serial port on both Windows and Linux/Pi.
-    - Windows: looks for COM ports, prefers the USB-flagged ones
-    - Linux/Pi: looks for /dev/ttyACM0 or /dev/ttyUSB0
-    """
+    """Auto-detect the Arduino serial port."""
     ports = list(serial.tools.list_ports.comports())
 
-    # Prefer any port with 'Arduino' or 'CH340' in its description
     for p in ports:
         desc = (p.description or "").lower()
         if "arduino" in desc or "ch340" in desc or "usb serial" in desc:
             return p.device
 
-    # Fallback: on Pi/Linux grab the first ttyACM or ttyUSB
     if platform.system() != "Windows":
         for p in ports:
             if "ttyACM" in p.device or "ttyUSB" in p.device:
                 return p.device
 
-    # Last resort: return COM5 on Windows (our tested default)
     if platform.system() == "Windows" and ports:
         return "COM5"
 
@@ -55,28 +47,39 @@ def _find_arduino_port() -> str | None:
 
 class ArduinoBridge:
     """
-    Singleton class that manages the Serial connection to the Arduino
-    and exposes the latest parsed sensor data.
+    Bidirectional bridge to Arduino.
+    - Background thread reads sensor JSON from serial
+    - send_command() writes JSON commands back to Arduino
     """
 
     def __init__(self):
-        self._lock          = threading.Lock()
-        self._thread        = None
-        self._running       = False
-        self._connected     = False
+        self._lock           = threading.Lock()
+        self._thread         = None
+        self._running        = False
+        self._connected      = False
         self._last_data_time = 0.0
+        self._serial_port    = None
+        self._serial_lock    = threading.Lock()
 
-        # Latest sensor state — default values (safe fallback)
+        # Command queue: Pi → Arduino
+        self._cmd_queue = queue.Queue(maxsize=50)
+
+        # Latest sensor state
         self._sensor_cache = {
             "motion":       False,
             "distance":     None,
             "zone":         "NONE",
             "light":        50,
+            "light_raw":    512,
             "light_status": "NORMAL",
             "lcd":          False,
             "uptime":       0,
-            "source":       "mock",  # "arduino" | "mock"
+            "source":       "mock",
         }
+
+        # Motion tracking for sleep/wake
+        self._last_motion_time = 0.0
+        self._motion_active    = False
 
     # ----------------------------------------------------------
     # PUBLIC API
@@ -85,41 +88,69 @@ class ArduinoBridge:
     def start(self):
         """Start the background reader thread."""
         if self._thread and self._thread.is_alive():
-            return  # Already running
+            return
         self._running = True
         self._thread  = threading.Thread(
             target=self._reader_loop,
             name="ArduinoBridgeThread",
-            daemon=True,  # Dies automatically when Python exits
+            daemon=True,
         )
         self._thread.start()
-        print("[HoloMat Hardware] Arduino bridge started.")
+        print("[HoloMat Hardware] Arduino bridge v2.0 started (bidirectional).")
 
     def stop(self):
-        """Stop the background reader thread."""
         self._running = False
 
     def is_connected(self) -> bool:
-        """Returns True if we are actively receiving data from the Arduino."""
         return self._connected
 
     def get_sensor_data(self) -> dict:
-        """Return the most recent sensor reading as a dict."""
         with self._lock:
             return dict(self._sensor_cache)
+
+    def get_last_motion_time(self) -> float:
+        """Last time motion was detected (epoch seconds)."""
+        return self._last_motion_time
+
+    def is_motion_active(self) -> bool:
+        """True if motion was recently detected."""
+        return self._motion_active
+
+    def send_command(self, cmd: dict):
+        """
+        Send a JSON command to the Arduino.
+        Examples:
+            send_command({"cmd": "ir", "action": "brightness_up"})
+            send_command({"cmd": "lcd", "line1": "HELLO", "line2": "WORLD"})
+            send_command({"cmd": "lcd_status", "text": "STANDBY"})
+        """
+        try:
+            self._cmd_queue.put_nowait(cmd)
+        except queue.Full:
+            print("[HoloMat Hardware] Command queue full, dropping command.")
+
+    def send_ir(self, action: str):
+        """Shortcut: send an IR command."""
+        self.send_command({"cmd": "ir", "action": action})
+
+    def send_lcd(self, line1: str, line2: str = ""):
+        """Shortcut: send LCD text."""
+        self.send_command({"cmd": "lcd", "line1": line1, "line2": line2})
+
+    def send_lcd_status(self, text: str):
+        """Shortcut: set persistent LCD status text."""
+        self.send_command({"cmd": "lcd_status", "text": text})
 
     # ----------------------------------------------------------
     # INTERNAL LOOP
     # ----------------------------------------------------------
 
     def _reader_loop(self):
-        """Background thread: connect → read → reconnect on error."""
         while self._running:
             port = _find_arduino_port()
 
             if not port:
-                print("[HoloMat Hardware] No Arduino detected. Retrying in "
-                      f"{RECONNECT_SEC}s... (Mock data active)")
+                print(f"[HoloMat Hardware] No Arduino detected. Retrying in {RECONNECT_SEC}s...")
                 self._mark_disconnected()
                 time.sleep(RECONNECT_SEC)
                 continue
@@ -131,38 +162,66 @@ class ArduinoBridge:
                     print(f"[HoloMat Hardware] ✅ Connected to Arduino on {port}!")
                     self._last_data_time = time.time()
 
+                    with self._serial_lock:
+                        self._serial_port = ser
+
                     while self._running:
+                        # --- Send any queued commands to Arduino ---
+                        self._flush_commands(ser)
+
+                        # --- Read sensor data from Arduino ---
                         raw = ser.readline().decode("utf-8", errors="ignore").strip()
 
                         if not raw:
-                            # Check for timeout (Arduino stopped sending)
                             if time.time() - self._last_data_time > DATA_TIMEOUT:
-                                print("[HoloMat Hardware] ⚠️  No data from Arduino — reconnecting...")
+                                print("[HoloMat Hardware] ⚠️  No data — reconnecting...")
                                 self._mark_disconnected()
                                 break
                             continue
 
-                        if raw.startswith("{") and raw.endswith("}"):
+                        # Filter: only parse sensor JSON, ignore IR confirmation lines
+                        if raw.startswith("{") and raw.endswith("}") and "\"motion\"" in raw:
                             self._parse_and_cache(raw)
 
             except serial.SerialException as e:
                 print(f"[HoloMat Hardware] Serial error: {e}. Reconnecting in {RECONNECT_SEC}s...")
                 self._mark_disconnected()
                 time.sleep(RECONNECT_SEC)
+            finally:
+                with self._serial_lock:
+                    self._serial_port = None
+
+    def _flush_commands(self, ser):
+        """Send all queued commands to Arduino."""
+        while not self._cmd_queue.empty():
+            try:
+                cmd = self._cmd_queue.get_nowait()
+                cmd_json = json.dumps(cmd) + "\n"
+                ser.write(cmd_json.encode("utf-8"))
+                ser.flush()
+            except (queue.Empty, serial.SerialException):
+                break
 
     def _parse_and_cache(self, raw_json: str):
-        """Parse one JSON line from Arduino and update the sensor cache."""
         try:
             data = json.loads(raw_json)
             self._last_data_time = time.time()
 
+            motion_now = data.get("motion", False)
+
             with self._lock:
                 self._connected = True
+                self._motion_active = motion_now
+
+                if motion_now:
+                    self._last_motion_time = time.time()
+
                 self._sensor_cache.update({
-                    "motion":       data.get("motion",       self._sensor_cache["motion"]),
+                    "motion":       motion_now,
                     "distance":     data.get("distance",     self._sensor_cache["distance"]),
                     "zone":         data.get("zone",         self._sensor_cache["zone"]),
                     "light":        data.get("light",        self._sensor_cache["light"]),
+                    "light_raw":    data.get("light_raw",    self._sensor_cache["light_raw"]),
                     "light_status": data.get("light_status", self._sensor_cache["light_status"]),
                     "lcd":          data.get("lcd",          self._sensor_cache["lcd"]),
                     "uptime":       data.get("uptime",       self._sensor_cache["uptime"]),
@@ -170,7 +229,7 @@ class ArduinoBridge:
                 })
 
         except json.JSONDecodeError:
-            pass  # Ignore garbled lines during Arduino startup
+            pass
 
     def _mark_disconnected(self):
         with self._lock:
@@ -179,6 +238,6 @@ class ArduinoBridge:
 
 
 # ============================================================
-# SINGLETON INSTANCE — import this from anywhere in the backend
+# SINGLETON
 # ============================================================
 arduino_bridge = ArduinoBridge()
