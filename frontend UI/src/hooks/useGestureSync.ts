@@ -43,6 +43,7 @@ interface UseGestureSyncReturn {
   // Control mode: send data
   sendGesture: (gesture: GestureType, confidence: number) => void
   sendAuth: (authenticated: boolean, user: string, confidence: number) => void
+  sendBypass: () => void  // Skip face scan → instantly unlock projector dashboard
 }
 
 export function useGestureSync(role: 'control' | 'display' = 'display'): UseGestureSyncReturn {
@@ -160,6 +161,17 @@ export function useGestureSync(role: 'control' | 'display' = 'display'): UseGest
     }
   }, [])
 
+  // Send bypass: skip face scan, unlock projector directly (control mode)
+  const sendBypass = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'bypass_login',
+        user: 'Commander',
+      }))
+      console.log('[GestureSync] Bypass sent → projector unlocking...')
+    }
+  }, [])
+
   return {
     lastGesture,
     lastAuth,
@@ -167,5 +179,6 @@ export function useGestureSync(role: 'control' | 'display' = 'display'): UseGest
     isConnected,
     sendGesture,
     sendAuth,
+    sendBypass,
   }
 }

@@ -44,7 +44,7 @@ export function HandTrackingOverlay({ enabled: dashboardReady = false }: HandTra
         useHandTracking({ enabled: dashboardReady && trackingOn, sensitivity: handSensitivity })
 
     // WebSocket sync to Pi backend (control mode = laptop sends gestures)
-    const { sendGesture, isConnected } = useGestureSync('control')
+    const { sendGesture, sendBypass, isConnected } = useGestureSync('control')
 
     // Track the last gesture we sent to avoid spamming
     const lastSentGesture = useRef<HandGesture>('none')
@@ -75,6 +75,28 @@ export function HandTrackingOverlay({ enabled: dashboardReady = false }: HandTra
                         title={isConnected ? 'Synced to projector' : 'Not connected to Pi'}
                     />
                 </span>
+                {/* Bypass button — unlock projector without face scan */}
+                {!dashboardReady && (
+                    <button
+                        onClick={sendBypass}
+                        disabled={!isConnected}
+                        title={isConnected ? 'Click to bypass face scan on projector' : 'Not connected to Pi'}
+                        style={{
+                            marginLeft: '8px',
+                            padding: '2px 10px',
+                            background: isConnected ? 'rgba(0,212,255,0.15)' : 'rgba(80,80,80,0.2)',
+                            border: `1px solid ${isConnected ? 'rgba(0,212,255,0.6)' : 'rgba(120,120,120,0.3)'}`,
+                            color: isConnected ? 'rgba(0,212,255,0.9)' : 'rgba(150,150,150,0.5)',
+                            fontFamily: 'Share Tech Mono, monospace',
+                            fontSize: '9px',
+                            letterSpacing: '0.15em',
+                            cursor: isConnected ? 'pointer' : 'not-allowed',
+                            borderRadius: '3px',
+                        }}
+                    >
+                        ⚡ UNLOCK PROJECTOR
+                    </button>
+                )}
                 <div className="ht-controls">
                     <button
                         className={`ht-btn ${trackingOn ? 'ht-btn--on' : 'ht-btn--off'}`}

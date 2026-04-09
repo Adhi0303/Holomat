@@ -11,6 +11,7 @@ import { useVoiceAssistant } from './hooks/useVoiceAssistant'
 import { HandTrackingOverlay } from './components/HandTrackingOverlay'
 import { VirtualHandCursor } from './components/VirtualHandCursor'
 import { useHandClick } from './hooks/useHandClick'
+import { useGestureSync } from './hooks/useGestureSync'
 
 // New eDEX-UI Zone Components
 import { SystemInfoPanel } from './components/SystemInfoPanel'
@@ -44,6 +45,9 @@ function App() {
   const { userName, lastResponse } = useAppStore()
   const { isConnected } = useApiData()
   const { isListening, isSpeaking, transcript, toggleListening, processTextCommand } = useVoiceAssistant()
+
+  // Control client: send bypass to projector over WebSocket
+  const { sendBypass, isConnected: piConnected } = useGestureSync('control')
 
   // Activate hand→click dispatcher when on dashboard
   useHandClick()
@@ -337,6 +341,49 @@ function App() {
 
       {/* ── Virtual Hand Cursor (full-screen pointer following hand position) ── */}
       {screenState === 'dashboard' && <VirtualHandCursor />}
+
+      {/* ── Floating Projector Bypass Button (visible on laptop during standby/scan/welcome) ── */}
+      {screenState !== 'dashboard' && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          zIndex: 99999,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-end',
+          gap: '8px',
+        }}>
+          <button
+            onClick={sendBypass}
+            disabled={!piConnected}
+            style={{
+              padding: '12px 24px',
+              background: piConnected ? 'rgba(0, 212, 255, 0.12)' : 'rgba(60,60,60,0.3)',
+              border: `1px solid ${piConnected ? 'rgba(0,212,255,0.7)' : 'rgba(100,100,100,0.3)'}`,
+              color: piConnected ? 'rgba(0,212,255,1)' : 'rgba(120,120,120,0.5)',
+              fontFamily: 'Share Tech Mono, monospace',
+              fontSize: '13px',
+              letterSpacing: '0.2em',
+              cursor: piConnected ? 'pointer' : 'not-allowed',
+              borderRadius: '6px',
+              backdropFilter: 'blur(10px)',
+              boxShadow: piConnected ? '0 0 20px rgba(0,212,255,0.2)' : 'none',
+              transition: 'all 0.2s',
+            }}
+          >
+            ⚡ UNLOCK PROJECTOR
+          </button>
+          <span style={{
+            fontSize: '9px',
+            color: piConnected ? 'rgba(0,212,255,0.4)' : 'rgba(255,80,80,0.5)',
+            fontFamily: 'Share Tech Mono, monospace',
+            letterSpacing: '0.15em',
+          }}>
+            {piConnected ? 'PI CONNECTED' : 'PI DISCONNECTED'}
+          </span>
+        </div>
+      )}
     </>
   )
 }

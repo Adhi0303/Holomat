@@ -179,6 +179,18 @@ async def handle_incoming_message(ws: WebSocket, data: dict):
             arduino_bridge.send_lcd("ACCESS DENIED", "  UNAUTHORIZED")
             print(f"[HoloMat Auth] ❌ Authentication failed")
 
+    elif msg_type == "bypass_login":
+        # Laptop sent a bypass command — unlock projector without face scan
+        user = data.get("user", "Commander")
+        await broadcast({
+            "type": "auth_result",
+            "success": True,
+            "user": user,
+            "confidence": 100.0,
+        }, exclude=ws)
+        arduino_bridge.send_lcd("BYPASS GRANTED", f"  {user}")
+        print(f"[HoloMat Auth] ⚡ Bypass login from laptop → {user}")
+
 
 @ws_router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
