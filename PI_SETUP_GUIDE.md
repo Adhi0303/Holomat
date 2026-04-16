@@ -14,7 +14,7 @@ Gather these items before starting:
 ---
 
 ## 💻 Step 2: Flashing the OS (Done on your Windows Laptop)
-We need to install the operating system onto the MicroSD card.
+We need to install the operating system onto the MicroSD card
 
 1. **Download the Imager:** Go to [raspberrypi.com/software](https://www.raspberrypi.com/software/) and download/install the **Raspberry Pi Imager** for Windows.
 2. **Open the Imager:** Insert your MicroSD card into your laptop and open the Imager app.
