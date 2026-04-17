@@ -41,7 +41,7 @@ export function StandbyScreen({ onActivate }: StandbyScreenProps) {
                 </motion.h1>
 
                 <p className="standby-subtitle">
-                    Approach to activate facial recognition
+                    Tap anywhere to boot the system
                 </p>
 
                 <motion.div
@@ -49,7 +49,7 @@ export function StandbyScreen({ onActivate }: StandbyScreenProps) {
                     animate={{ y: [0, 10, 0] }}
                     transition={{ duration: 1.5, repeat: Infinity }}
                 >
-                    <span>Click anywhere to simulate approach</span>
+                    <span>Click anywhere to activate</span>
                     <span className="arrow">↓</span>
                 </motion.div>
             </div>

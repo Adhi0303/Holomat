@@ -1,163 +1,152 @@
 /**
- * HandTrackingOverlay Component (v2 — Gesture Sync)
- * ===================================================
- * Renders a sci-fi camera preview in the bottom corner.
- * Now sends detected gestures to the Pi backend via WebSocket
- * so the projector display reacts to hand movements.
- *
- * Shows:
- *   - Live webcam feed (mirrored)
- *   - MediaPipe skeleton landmarks
- *   - Current detected gesture label
- *   - WebSocket sync status indicator
+ * HandTrackingOverlay
+ * Full-screen transparent overlay rendering the virtual hand cursor.
+ * Cursor position updates DOM directly (bypasses React) for 60fps.
+ * Also renders the CameraPreviewPanel mini-screen.
  */
 
-import { useState, useEffect, useRef } from 'react'
+import { useRef, useEffect } from 'react'
 import { useHandTracking, type HandGesture } from '../hooks/useHandTracking'
-import { useGestureSync, type GestureType } from '../hooks/useGestureSync'
-import { useAppStore } from '../stores/appStore'
+import { CameraPreviewPanel } from './CameraPreviewPanel'
 import '../styles/HandTrackingOverlay.css'
 
-// Map gestures to emoji labels for the HUD
-const GESTURE_ICONS: Record<HandGesture, string> = {
-    none:        '·  ·  ·',
-    hover:       '✋ HOVER',
-    grab:        '✊ GRAB',
-    swipe_left:  '👈 SWIPE LEFT',
-    swipe_right: '👉 SWIPE RIGHT',
-    push:        '☝️ POINT',
-    pull:        '🤚 PULL',
+// ─── Gesture meta ──────────────────────────────────────────────────────────────
+const GESTURE_LABEL: Record<HandGesture, string> = {
+  none:     'NO HAND',
+  open:     'HOVER',
+  pinch:    'CLICK',
+  fist:     'GRAB',
+  zoom_in:  'ZOOM +',
+  zoom_out: 'ZOOM −',
 }
 
-interface HandTrackingOverlayProps {
-    /** Only activate tracking once the dashboard is fully loaded */
-    enabled?: boolean
+// ─── Component ────────────────────────────────────────────────────────────────
+interface Props {
+  enabled: boolean
 }
 
-export function HandTrackingOverlay({ enabled: dashboardReady = false }: HandTrackingOverlayProps) {
-    const [trackingOn, setTrackingOn] = useState(true)
-    const [collapsed, setCollapsed] = useState(false)
-    const { handSensitivity } = useAppStore()
+export function HandTrackingOverlay({ enabled }: Props) {
+  const { state, videoRef, onCursorMove } = useHandTracking(enabled)
 
-    // Hand tracking from camera
-    const { videoRef, canvasRef, status, error, currentGesture, handVisible } =
-        useHandTracking({ enabled: dashboardReady && trackingOn, sensitivity: handSensitivity })
+  // Cursor DOM ref — position updated via JS, not React state
+  const cursorRef    = useRef<HTMLDivElement>(null)
+  const isActiveRef  = useRef(false)
 
-    // WebSocket sync to Pi backend (control mode = laptop sends gestures)
-    const { sendGesture, sendBypass, isConnected } = useGestureSync('control')
+  // Hover element tracking
+  const hoverEl      = useRef<Element | null>(null)
 
-    // Track the last gesture we sent to avoid spamming
-    const lastSentGesture = useRef<HandGesture>('none')
+  // Throttle hover lookups to every N frames
+  const hoverFrame   = useRef(0)
 
-    // Send gestures to Pi backend when they change
-    useEffect(() => {
-        if (currentGesture !== 'none' && currentGesture !== lastSentGesture.current) {
-            sendGesture(currentGesture as GestureType, 0.9)
-            lastSentGesture.current = currentGesture
-        } else if (currentGesture === 'none') {
-            lastSentGesture.current = 'none'
+  // ── Register cursor-move callback (direct DOM, no re-renders) ──────────────
+  useEffect(() => {
+    onCursorMove.current = (x: number, y: number, active: boolean) => {
+      const el = cursorRef.current
+      if (!el) return
+
+      if (active) {
+        el.style.transform = `translate(${x - 20}px, ${y - 20}px)`
+
+        if (!isActiveRef.current) {
+          el.classList.remove('ht-cursor--inactive')
+          isActiveRef.current = true
         }
-    }, [currentGesture, sendGesture])
 
-    // Don't render the widget at all during the boot/login flow
-    if (!dashboardReady) return null
+        // Hover detection (every 3 frames for perf)
+        hoverFrame.current++
+        if (hoverFrame.current % 3 === 0) {
+          const target = document.elementFromPoint(x, y)
+          const interactive = target?.closest(
+            'button, a, [role="button"], [data-hand-target], input, select, .quickaction-btn, .mode-tab, .model-btn'
+          )
+          if (interactive !== hoverEl.current) {
+            hoverEl.current?.classList.remove('hand-hover')
+            interactive?.classList.add('hand-hover')
+            hoverEl.current = interactive ?? null
+          }
+        }
+      } else {
+        if (isActiveRef.current) {
+          el.classList.add('ht-cursor--inactive')
+          isActiveRef.current = false
+          hoverEl.current?.classList.remove('hand-hover')
+          hoverEl.current = null
+        }
+      }
+    }
+  }, [onCursorMove])
 
-    return (
-        <div className={`ht-overlay ${collapsed ? 'ht-collapsed' : ''}`}>
-            {/* Header bar */}
-            <div className="ht-header">
-                <span className="ht-title">
-                    <span className={`ht-dot ${handVisible ? 'ht-dot--active' : ''}`} />
-                    HAND TRACKING
-                    {/* WebSocket sync indicator */}
-                    <span
-                        className={`ht-sync-dot ${isConnected ? 'ht-sync--connected' : 'ht-sync--disconnected'}`}
-                        title={isConnected ? 'Synced to projector' : 'Not connected to Pi'}
-                    />
-                </span>
-                {/* Bypass button — unlock projector without face scan */}
-                {!dashboardReady && (
-                    <button
-                        onClick={sendBypass}
-                        disabled={!isConnected}
-                        title={isConnected ? 'Click to bypass face scan on projector' : 'Not connected to Pi'}
-                        style={{
-                            marginLeft: '8px',
-                            padding: '2px 10px',
-                            background: isConnected ? 'rgba(0,212,255,0.15)' : 'rgba(80,80,80,0.2)',
-                            border: `1px solid ${isConnected ? 'rgba(0,212,255,0.6)' : 'rgba(120,120,120,0.3)'}`,
-                            color: isConnected ? 'rgba(0,212,255,0.9)' : 'rgba(150,150,150,0.5)',
-                            fontFamily: 'Share Tech Mono, monospace',
-                            fontSize: '9px',
-                            letterSpacing: '0.15em',
-                            cursor: isConnected ? 'pointer' : 'not-allowed',
-                            borderRadius: '3px',
-                        }}
-                    >
-                        ⚡ UNLOCK PROJECTOR
-                    </button>
-                )}
-                <div className="ht-controls">
-                    <button
-                        className={`ht-btn ${trackingOn ? 'ht-btn--on' : 'ht-btn--off'}`}
-                        onClick={() => setTrackingOn((v: boolean) => !v)}
-                        title={trackingOn ? 'Disable tracking' : 'Enable tracking'}
-                    >
-                        {trackingOn ? 'ON' : 'OFF'}
-                    </button>
-                    <button
-                        className="ht-btn ht-btn--icon"
-                        onClick={() => setCollapsed(c => !c)}
-                        title={collapsed ? 'Expand' : 'Collapse'}
-                    >
-                        {collapsed ? '▲' : '▼'}
-                    </button>
-                </div>
-            </div>
+  // ── Sync gesture class on the cursor div ──────────────────────────────────
+  const prevGestureClass = useRef<string>('')
+  useEffect(() => {
+    const el = cursorRef.current
+    if (!el) return
 
-            {/* Camera feed (hidden when collapsed) */}
-            {!collapsed && (
-                <div className="ht-feed">
-                    {/* Status overlays */}
-                    {status === 'loading' && (
-                        <div className="ht-status ht-status--loading">
-                            <div className="ht-spinner" />
-                            Loading model…
-                        </div>
-                    )}
-                    {status === 'error' && (
-                        <div className="ht-status ht-status--error">
-                            ⚠️ {error ?? 'Error'}
-                        </div>
-                    )}
-                    {status === 'disabled' && (
-                        <div className="ht-status ht-status--disabled">
-                            Hand tracking OFF
-                        </div>
-                    )}
+    const newClass = `ht-cursor--${state.gesture}`
+    if (newClass !== prevGestureClass.current) {
+      if (prevGestureClass.current) el.classList.remove(prevGestureClass.current)
+      if (state.gesture !== 'none') el.classList.add(newClass)
+      prevGestureClass.current = newClass
+    }
+  }, [state.gesture])
 
-                    {/* Video + overlay canvas stacked */}
-                    <div className="ht-video-wrap">
-                        <video
-                            ref={videoRef}
-                            className="ht-video"
-                            muted
-                            playsInline
-                        />
-                        <canvas ref={canvasRef} className="ht-canvas" />
-                    </div>
+  // ── Cleanup hover on disable ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!enabled) {
+      hoverEl.current?.classList.remove('hand-hover')
+      hoverEl.current = null
+    }
+  }, [enabled])
 
-                    {/* Gesture label */}
-                    <div className={`ht-gesture ${currentGesture !== 'none' ? 'ht-gesture--active' : ''}`}>
-                        {GESTURE_ICONS[currentGesture]}
-                    </div>
+  if (!enabled) return null
 
-                    {/* Sync status bar */}
-                    <div className={`ht-sync-bar ${isConnected ? 'ht-sync-bar--active' : ''}`}>
-                        {isConnected ? '🔗 SYNCED TO PROJECTOR' : '⚠️ PROJECTOR OFFLINE'}
-                    </div>
-                </div>
-            )}
+  return (
+    <>
+      <div className="ht-overlay" aria-hidden="true">
+        {/* Hidden camera feed consumed by MediaPipe — actual display is in CameraPreviewPanel */}
+        <video
+          ref={videoRef}
+          className="ht-video"
+          playsInline
+          muted
+        />
+
+        {/* ── Virtual hand cursor ── */}
+        <div
+          ref={cursorRef}
+          className="ht-cursor ht-cursor--inactive"
+        >
+          <div className="ht-cursor__ring" />
+          <div className="ht-cursor__cross" />
+          <div className="ht-cursor__bracket" />
+          <div className="ht-cursor__dot" />
+          <span className="ht-cursor__label">
+            {GESTURE_LABEL[state.gesture]}
+          </span>
         </div>
-    )
+
+        {/* ── Status HUD (top-right) ── */}
+        <div className={`ht-hud ${state.isActive ? 'ht-hud--active' : ''}`}>
+          <div className="ht-hud__dot" />
+          <span className="ht-hud__text">
+            {state.isTracking
+              ? state.isActive
+                ? GESTURE_LABEL[state.gesture]
+                : 'CAM READY'
+              : 'INITIALIZING...'}
+          </span>
+        </div>
+      </div>
+
+      {/* ── Mini camera preview panel — draggable, live feed + skeleton ── */}
+      <CameraPreviewPanel
+        enabled={enabled}
+        videoRef={videoRef}
+        landmarks={state.landmarks}
+        gesture={state.gesture}
+        isTracking={state.isTracking}
+        isActive={state.isActive}
+      />
+    </>
+  )
 }

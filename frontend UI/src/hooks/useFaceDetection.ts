@@ -13,6 +13,7 @@ export function useFaceDetection({ onFaceDetected, onNoFace, isActive }: FaceDet
     const videoRef = useRef<HTMLVideoElement>(null)
     const [detector, setDetector] = useState<faceDetection.FaceDetector | null>(null)
     const [stream, setStream] = useState<MediaStream | null>(null)
+    const streamRef = useRef<MediaStream | null>(null)   // ref always has latest value
     const [faceCount, setFaceCount] = useState(0)
     const [isModelLoading, setIsModelLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -61,12 +62,14 @@ export function useFaceDetection({ onFaceDetected, onNoFace, isActive }: FaceDet
     // Access webcam
     useEffect(() => {
         if (!isActive) {
-            // Turn off camera when scanning completes
-            if (stream) {
-                stream.getTracks().forEach(track => {
+            // Turn off camera when scanning completes — use ref to avoid stale closure
+            const current = streamRef.current
+            if (current) {
+                current.getTracks().forEach(track => {
                     track.stop()
                     console.log('✓ CAMERA TURNED OFF - Facial recognition complete')
                 })
+                streamRef.current = null
                 setStream(null)
                 if (videoRef.current) {
                     videoRef.current.srcObject = null
@@ -86,6 +89,7 @@ export function useFaceDetection({ onFaceDetected, onNoFace, isActive }: FaceDet
                     audio: false
                 })
 
+                streamRef.current = mediaStream
                 setStream(mediaStream)
 
                 if (videoRef.current) {
@@ -100,10 +104,13 @@ export function useFaceDetection({ onFaceDetected, onNoFace, isActive }: FaceDet
         startVideo()
 
         return () => {
-            // Cleanup on unmount
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop())
+            // Cleanup on unmount — ref always has the current stream
+            const s = streamRef.current
+            if (s) {
+                s.getTracks().forEach(track => track.stop())
+                streamRef.current = null
             }
+            if (videoRef.current) videoRef.current.srcObject = null
         }
     }, [isActive])
 

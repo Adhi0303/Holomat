@@ -1,111 +1,55 @@
+/**
+ * ScanningScreen
+ * Pure animated boot sequence — NO camera usage.
+ * User taps to activate → system runs a timed visual boot animation → calls onComplete.
+ */
+
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
-import { useFaceDetection } from '../hooks/useFaceDetection'
 
 interface ScanningScreenProps {
     onComplete: () => void
 }
 
+const BOOT_STAGES = [
+    { at: 0,   progress: 0,   status: 'INITIALIZING SYSTEMS...' },
+    { at: 400, progress: 15,  status: 'LOADING NEURAL ENGINE...' },
+    { at: 900, progress: 32,  status: 'CALIBRATING SENSORS...' },
+    { at: 1400, progress: 50, status: 'ESTABLISHING UPLINK...' },
+    { at: 1900, progress: 68, status: 'VERIFYING IDENTITY...' },
+    { at: 2400, progress: 84, status: 'SYNCING SUBSYSTEMS...' },
+    { at: 2900, progress: 97, status: 'ACCESS GRANTED' },
+    { at: 3200, progress: 100, status: 'WELCOME, MR. STARK' },
+]
+
 export function ScanningScreen({ onComplete }: ScanningScreenProps) {
     const [progress, setProgress] = useState(0)
-    const [status, setStatus] = useState('Initializing camera...')
-    const [faceDetected, setFaceDetected] = useState(false)
-    const [isScanning, setIsScanning] = useState(true) // Track if actively scanning
+    const [stageIndex, setStageIndex] = useState(0)
 
-    // Face detection hook
-    const { videoRef, faceCount, isModelLoading, error, stream } = useFaceDetection({
-        onFaceDetected: () => {
-            setFaceDetected(true)
-        },
-        onNoFace: () => {
-            setFaceDetected(false)
-        },
-        isActive: isScanning // Use isScanning state instead of hardcoded true
-    })
-
-    // Progress simulation with real face detection
     useEffect(() => {
-        if (error) {
-            setStatus('Camera access denied. Using simulation mode...')
-            // Fall back to simulated scanning
-            simulatedScanning()
-            return
-        }
+        const timers: ReturnType<typeof setTimeout>[] = []
 
-        if (isModelLoading) {
-            setStatus('Loading AI model...')
-            return
-        }
+        BOOT_STAGES.forEach((stage, i) => {
+            timers.push(
+                setTimeout(() => {
+                    setProgress(stage.progress)
+                    setStageIndex(i)
+                }, stage.at)
+            )
+        })
 
-        if (!stream) {
-            setStatus('Waiting for camera...')
-            return
-        }
+        // Finish after the last stage + brief hold
+        timers.push(
+            setTimeout(() => {
+                onComplete()
+            }, BOOT_STAGES[BOOT_STAGES.length - 1].at + 600)
+        )
 
-        // Real scanning with face detection
-        setStatus('Position your face in frame...')
+        return () => timers.forEach(clearTimeout)
+    }, [onComplete])
 
-        const stages = [
-            { minProgress: 0, status: 'Detecting face...' },
-            { minProgress: 25, status: 'Analyzing facial features...' },
-            { minProgress: 50, status: 'Matching database...' },
-            { minProgress: 75, status: 'Verifying identity...' },
-            { minProgress: 95, status: 'Access granted!' },
-        ]
-
-        // Progress increases faster when face is detected
-        const progressInterval = setInterval(() => {
-            setProgress(prev => {
-                // Increase by 2-5 points per interval if face detected, otherwise 1
-                const increment = faceDetected ? Math.random() * 3 + 2 : 1
-                const newProgress = Math.min(prev + increment, 100)
-
-                // Update status based on progress
-                const stage = stages.find(s => newProgress >= s.minProgress)
-                if (stage) {
-                    setStatus(stage.status)
-                }
-
-                if (newProgress >= 100) {
-                    clearInterval(progressInterval)
-                    // Turn off camera BEFORE transitioning
-                    setIsScanning(false)
-                    console.log('🔴 Stopping camera - scan complete')
-                    setTimeout(onComplete, 800) // Give time for camera to turn off
-                }
-
-                return newProgress
-            })
-        }, faceDetected ? 150 : 300) // Faster progress when face detected
-
-        return () => clearInterval(progressInterval)
-    }, [stream, isModelLoading, error, faceDetected, onComplete])
-
-    // Simulated scanning fallback
-    const simulatedScanning = () => {
-        const stages = [
-            { progress: 15, status: 'Detecting face...' },
-            { progress: 35, status: 'Analyzing features...' },
-            { progress: 55, status: 'Matching database...' },
-            { progress: 75, status: 'Verifying identity...' },
-            { progress: 95, status: 'Access granted!' },
-            { progress: 100, status: 'Welcome!' },
-        ]
-
-        let currentStage = 0
-        const interval = setInterval(() => {
-            if (currentStage < stages.length) {
-                setProgress(stages[currentStage].progress)
-                setStatus(stages[currentStage].status)
-                currentStage++
-            } else {
-                clearInterval(interval)
-                setIsScanning(false) // Turn off camera
-                console.log('🔴 Stopping camera - simulated scan complete')
-                setTimeout(onComplete, 800)
-            }
-        }, 600)
-    }
+    const currentStage = BOOT_STAGES[stageIndex]
+    const isDone = progress === 100
 
     return (
         <motion.div
@@ -116,29 +60,6 @@ export function ScanningScreen({ onComplete }: ScanningScreenProps) {
             transition={{ duration: 0.3 }}
         >
             <div className="scanning-content">
-                {/* Video Feed */}
-                {stream && !error && (
-                    <div className="video-container">
-                        <video
-                            ref={videoRef}
-                            autoPlay
-                            playsInline
-                            muted
-                            className="webcam-feed"
-                        />
-                        {faceCount > 0 && (
-                            <motion.div
-                                className="face-detected-indicator"
-                                initial={{ scale: 0 }}
-                                animate={{ scale: 1 }}
-                                transition={{ type: 'spring', stiffness: 300 }}
-                            >
-                                <span>✓ Face Detected</span>
-                            </motion.div>
-                        )}
-                    </div>
-                )}
-
                 {/* Progress ring */}
                 <div className="progress-container">
                     <svg className="progress-ring" viewBox="0 0 200 200">
@@ -165,7 +86,7 @@ export function ScanningScreen({ onComplete }: ScanningScreenProps) {
                             transform="rotate(-90 100 100)"
                             initial={{ strokeDashoffset: 565.48 }}
                             animate={{ strokeDashoffset: 565.48 - (565.48 * progress) / 100 }}
-                            transition={{ duration: 0.5, ease: 'easeOut' }}
+                            transition={{ duration: 0.4, ease: 'easeOut' }}
                         />
                         {/* Inner decorative rings */}
                         <circle
@@ -196,47 +117,50 @@ export function ScanningScreen({ onComplete }: ScanningScreenProps) {
 
                     {/* Center content */}
                     <div className="scan-center">
+                        {/* Holomat logo / power icon instead of face */}
                         <motion.div
                             className="scan-face-icon"
                             animate={{
-                                scale: faceDetected ? [1, 1.1, 1] : 1,
-                                color: faceDetected ? '#00ff88' : '#00d4ff'
+                                scale: isDone ? [1, 1.15, 1] : 1,
+                                color: isDone ? '#00ff88' : '#00d4ff',
                             }}
-                            transition={{ duration: 1, repeat: faceDetected ? Infinity : 0 }}
+                            transition={{ duration: 0.6, repeat: isDone ? 0 : 0 }}
                         >
                             <svg viewBox="0 0 100 100">
-                                <circle cx="50" cy="35" r="18" fill="none" stroke="currentColor" strokeWidth="2" />
-                                <path d="M22 80 Q22 55 50 55 Q78 55 78 80" fill="none" stroke="currentColor" strokeWidth="2" />
+                                {/* Zap / power bolt */}
+                                <polygon
+                                    points="55,10 30,55 50,55 45,90 70,45 50,45"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2.5"
+                                    strokeLinejoin="round"
+                                />
                             </svg>
                         </motion.div>
                         <div className="scan-percentage">{Math.round(progress)}%</div>
                     </div>
                 </div>
 
-                {/* Status text */}
+                {/* Title */}
                 <motion.h2
                     className="scan-title"
-                    key={status}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3 }}
                 >
-                    FACIAL RECOGNITION
+                    HOLOMAT BOOT
                 </motion.h2>
 
+                {/* Status text */}
                 <motion.p
                     className="scan-status"
-                    key={`status-${progress}`}
+                    key={currentStage.status}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.2 }}
                 >
-                    {status}
+                    {currentStage.status}
                 </motion.p>
-
-                {error && (
-                    <p className="scan-error">{error}</p>
-                )}
 
                 {/* Scanning lines effect */}
                 <div className="scan-lines-container">

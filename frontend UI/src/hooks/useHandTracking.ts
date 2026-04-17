@@ -1,391 +1,264 @@
 /**
- * useHandTracking Hook (v2 — Virtual Cursor Edition)
- * ====================================================
- * Runs Google MediaPipe HandLandmarker entirely inside the browser.
- * Detects hand landmarks at ~30 FPS, classifies gestures, AND
- * exports continuous hand position + pinch state for the virtual cursor.
- *
- * New exports:
- *   - handPosition { x, y }  — index finger tip in screen pixels
- *   - isPinching             — thumb tip ↔ index tip distance < threshold
- *   - isGrabbing             — all fingers closed (fist)
- *
- * React StrictMode safe: uses a single cleanup-aware effect.
+ * useHandTracking
+ * MediaPipe-powered hand tracking with gesture recognition.
+ * Cursor position is updated via a ref-callback (not React state) for 60fps performance.
+ * Gestures are bridged into the global appStore for system-wide reactivity.
  */
 
-import { useEffect, useRef, useState } from 'react'
-import {
-    HandLandmarker,
-    FilesetResolver,
-    type HandLandmarkerResult,
-} from '@mediapipe/tasks-vision'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { HandLandmarker, FilesetResolver } from '@mediapipe/tasks-vision'
+import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
 import { useAppStore } from '../stores/appStore'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+export type HandGesture = 'none' | 'open' | 'pinch' | 'fist' | 'zoom_in' | 'zoom_out'
 
-export type HandGesture =
-    | 'none'
-    | 'swipe_left'
-    | 'swipe_right'
-    | 'push'
-    | 'pull'
-    | 'hover'
-    | 'grab'
-
-export type TrackingStatus = 'loading' | 'ready' | 'error' | 'disabled'
-
-export interface HandPosition {
-    x: number
-    y: number
+export interface HandTrackingState {
+  gesture: HandGesture
+  isActive: boolean         // hand is visible
+  isTracking: boolean       // MediaPipe is running
+  landmarks: NormalizedLandmark[][] // raw landmark data for mini-screen visualization
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+const WASM_PATH = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+const MODEL_PATH =
+  'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
 
-const WRIST      = 0
-const THUMB_TIP  = 4
-const INDEX_TIP  = 8
-const MIDDLE_TIP = 12
-const RING_TIP   = 16
-const PINKY_TIP  = 20
-const INDEX_MCP  = 5
-const MIDDLE_MCP = 9
-const RING_MCP   = 13
-const PINKY_MCP  = 17
+const PINCH_THRESHOLD = 0.07   // thumb-tip ↔ index-tip normalized distance
+const FIST_THRESHOLD  = 0.14   // average fingertip ↔ wrist distance for fist
 
-const SWIPE_THRESHOLD         = 0.08
-const VELOCITY_HISTORY        = 6
-const GESTURE_COOLDOWN_FRAMES = 20
-const PINCH_THRESHOLD         = 0.06   // normalized distance for pinch
-const LERP_FACTOR             = 0.35   // smoothing factor (0 = no move, 1 = instant)
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-interface Point { x: number; y: number; z: number }
-type Landmarks = Point[]
-
-function lerp(a: number, b: number, t: number): number {
-    return a + (b - a) * t
+// ─── Geometry helpers ─────────────────────────────────────────────────────────
+function dist2D(a: NormalizedLandmark, b: NormalizedLandmark): number {
+  return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
-function dist2D(a: Point, b: Point): number {
-    return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2)
+function classifyGesture(
+  lm: NormalizedLandmark[],
+  allHands: NormalizedLandmark[][]
+): HandGesture {
+  if (!lm || lm.length < 21) return 'none'
+
+  const thumbTip  = lm[4]
+  const indexTip  = lm[8]
+  const middleTip = lm[12]
+  const ringTip   = lm[16]
+  const pinkyTip  = lm[20]
+  const wrist     = lm[0]
+  const middleMcp = lm[9] // Reference point for palm size
+
+  // Calculate palm size to make thresholds scale-invariant (works closer to or farther from camera)
+  const palmSize = dist2D(wrist, middleMcp)
+
+  // Pinch: thumb and index close together
+  if (dist2D(thumbTip, indexTip) < PINCH_THRESHOLD) return 'pinch'
+
+  // Two-hand zoom: both hands visible, classified at call site
+  if (allHands.length >= 2) return 'zoom_in'
+
+  // Fist: all fingertips curled inward toward the wrist
+  // An open hand has fingertips ~2x to 2.5x palm size away. A fist is ~1.2x.
+  const avgFingertipDist =
+    (dist2D(indexTip, wrist) +
+     dist2D(middleTip, wrist) +
+     dist2D(ringTip, wrist) +
+     dist2D(pinkyTip, wrist)) / 4
+
+  // Use 1.4x palmSize for a more forgiving and reliable grab detection
+  if (avgFingertipDist < palmSize * 1.4) return 'fist'
+
+  return 'open'
 }
 
-function isFingerExtended(tip: Point, mcp: Point): boolean {
-    return tip.y < mcp.y
-}
+// ─── Hook ─────────────────────────────────────────────────────────────────────
+export function useHandTracking(enabled: boolean) {
+  const videoRef    = useRef<HTMLVideoElement>(null)
+  const landmarker  = useRef<HandLandmarker | null>(null)
+  const rafId       = useRef<number>(-1)
 
-function classifyHandShape(landmarks: Landmarks): HandGesture {
-    const indexUp  = isFingerExtended(landmarks[INDEX_TIP],  landmarks[INDEX_MCP])
-    const middleUp = isFingerExtended(landmarks[MIDDLE_TIP], landmarks[MIDDLE_MCP])
-    const ringUp   = isFingerExtended(landmarks[RING_TIP],   landmarks[RING_MCP])
-    const pinkyUp  = isFingerExtended(landmarks[PINKY_TIP],  landmarks[PINKY_MCP])
+  // Cursor position update callback — set by the overlay component
+  // so cursor DOM updates bypass React entirely (60fps)
+  const onCursorMove = useRef<(x: number, y: number, active: boolean) => void>(() => {})
 
-    const fingersUp = [indexUp, middleUp, ringUp, pinkyUp].filter(Boolean).length
+  // Gesture transitions — only update React state when gesture *changes*
+  const prevGesture = useRef<HandGesture>('none')
+  const prevZoomDist = useRef<number | null>(null)
 
-    if (fingersUp === 0) return 'grab'
-    if (fingersUp >= 3)  return 'hover'
-    if (indexUp && !middleUp && !ringUp && !pinkyUp) return 'push'
-    return 'hover'
-}
+  // Bridge to global store for system-wide gesture reactivity
+  const setStoreGesture = useAppStore(s => s.setGesture)
+  const updateSensor    = useAppStore(s => s.updateSensor)
 
-// ─── Hook ────────────────────────────────────────────────────────────────────
+  const [state, setState] = useState<HandTrackingState>({
+    gesture: 'none',
+    isActive: false,
+    isTracking: false,
+    landmarks: [],
+  })
 
-interface UseHandTrackingOptions {
-    enabled?: boolean
-    sensitivity?: number  // 0.5 – 3.0, default 1.0
-}
+  // Trigger a real click+hover on the element beneath the cursor
+  const fireClick = useCallback((x: number, y: number) => {
+    const el = document.elementFromPoint(x, y)
+    if (!el) return
+    const target = el.closest('button, a, [role="button"], [data-hand-target], input, select') ?? el
+    ;(target as HTMLElement).dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y })
+    )
+  }, [])
 
-export function useHandTracking({
-    enabled = true,
-    sensitivity = 1.0,
-}: UseHandTrackingOptions = {}) {
-    const { setGesture, updateSensor, setHandCursor } = useAppStore()
+  // MediaPipe init — once per mount
+  const init = useCallback(async () => {
+    const vision = await FilesetResolver.forVisionTasks(WASM_PATH)
+    landmarker.current = await HandLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: MODEL_PATH,
+        delegate: 'GPU',
+      },
+      runningMode: 'VIDEO',
+      numHands: 2,
+      minHandDetectionConfidence: 0.6,
+      minHandPresenceConfidence: 0.6,
+      minTrackingConfidence: 0.5,
+    })
+  }, [])
 
-    const videoRef    = useRef<HTMLVideoElement>(null)
-    const canvasRef   = useRef<HTMLCanvasElement>(null)
-    const wristHistory = useRef<number[]>([])
-    const cooldown    = useRef(0)
-    const currentGestureRef = useRef<HandGesture>('none')
+  useEffect(() => {
+    if (!enabled) return
 
-    // Smoothed cursor position (persists across frames)
-    const smoothPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+    let alive = true
+    let stream: MediaStream | null = null
 
-    const [status, setStatus]   = useState<TrackingStatus>('loading')
-    const [error, setError]     = useState<string | null>(null)
-    const [currentGesture, setCurrentGesture] = useState<HandGesture>('none')
-    const [handVisible, setHandVisible]       = useState(false)
-    const [handPosition, setHandPosition]     = useState<HandPosition>({ x: 0, y: 0 })
-    const [isPinching, setIsPinching]         = useState(false)
-    const [isGrabbing, setIsGrabbing]         = useState(false)
-
-    // Sensitivity ref so detection loop picks up changes without re-init
-    const sensitivityRef = useRef(sensitivity)
-    sensitivityRef.current = sensitivity
-
-    // ── Single master effect: load → camera → detection loop ─────────────────
-    useEffect(() => {
-        if (!enabled) {
-            setStatus('disabled')
-            setHandCursor({ screenX: 0, screenY: 0, visible: false, isPinching: false, isGrabbing: false })
-            return
+    // Acquire camera with retry — face detection may still be releasing it
+    const acquireCamera = async (attempts = 5): Promise<MediaStream> => {
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480, facingMode: 'user' },
+          audio: false,
+        })
+      } catch (err: unknown) {
+        const name = err instanceof Error ? err.name : ''
+        if ((name === 'NotReadableError' || name === 'AbortError') && attempts > 1) {
+          console.warn(`[HandTracking] Camera busy, retrying in 1s… (${attempts - 1} left)`)
+          await new Promise(r => setTimeout(r, 1000))
+          return acquireCamera(attempts - 1)
         }
+        throw err
+      }
+    }
 
-        let cancelled = false
-        let stream: MediaStream | null = null
-        let landmarker: HandLandmarker | null = null
-        let rafHandle = 0
+    const run = async () => {
+      try {
+        await init()
+        if (!alive) return
 
-        setStatus('loading')
+        stream = await acquireCamera()
+        if (!alive || !videoRef.current) return
 
-        async function start() {
-            // 1. Load MediaPipe model
-            try {
-                const vision = await FilesetResolver.forVisionTasks(
-                    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+        videoRef.current.srcObject = stream
+        await videoRef.current.play()
+
+        setState(s => ({ ...s, isTracking: true }))
+
+        const loop = () => {
+          if (!alive || !landmarker.current || !videoRef.current) return
+
+          const result = landmarker.current.detectForVideo(videoRef.current, performance.now())
+          const hands  = result.landmarks ?? []
+
+          if (hands.length > 0) {
+            const lm      = hands[0]
+            const tipLm   = lm[8]                          // index fingertip = cursor
+
+            // Mirror X: webcam is a selfie view
+            const cx = (1 - tipLm.x) * window.innerWidth
+            const cy = tipLm.y * window.innerHeight
+
+            // Cursor position via DOM ref — no React state
+            onCursorMove.current(cx, cy, true)
+
+            // Gesture classification
+            let gesture = classifyGesture(lm, hands)
+
+            // Refine zoom_in → zoom_out based on inter-hand distance delta
+            if (hands.length >= 2 && gesture === 'zoom_in') {
+              const h2tip    = hands[1][8]
+              const d        = dist2D(tipLm, h2tip)
+              if (prevZoomDist.current !== null) {
+                gesture = d > prevZoomDist.current ? 'zoom_in' : 'zoom_out'
+
+                // Dispatch wheel event for native zoom on hovered element
+                const delta = (prevZoomDist.current - d) * 1500
+                const el = document.elementFromPoint(cx, cy)
+                el?.dispatchEvent(
+                  new WheelEvent('wheel', { deltaY: delta, bubbles: true, cancelable: true })
                 )
-                if (cancelled) return
-
-                landmarker = await HandLandmarker.createFromOptions(vision, {
-                    baseOptions: {
-                        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task',
-                        delegate: 'GPU',
-                    },
-                    runningMode:                'VIDEO',
-                    numHands:                    1,
-                    minHandDetectionConfidence:  0.6,
-                    minHandPresenceConfidence:   0.6,
-                    minTrackingConfidence:       0.5,
-                })
-                if (cancelled) { landmarker.close(); return }
-                console.log('✋ MediaPipe HandLandmarker loaded!')
-            } catch (err) {
-                if (!cancelled) {
-                    setError('Failed to load hand tracking model — check internet connection')
-                    setStatus('error')
-                }
-                return
+              }
+              prevZoomDist.current = d
+            } else {
+              prevZoomDist.current = null
             }
 
-            // 2. Open webcam
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: 640, height: 480, facingMode: 'user' },
-                    audio: false,
-                })
-                if (cancelled) { stream.getTracks().forEach(t => t.stop()); return }
-
-                let attempts = 0
-                while (!videoRef.current && attempts < 20) {
-                    await new Promise(r => setTimeout(r, 50))
-                    attempts++
-                }
-                if (cancelled || !videoRef.current) return
-
-                videoRef.current.srcObject = stream
-                await videoRef.current.play()
-                if (cancelled) return
-            } catch (err) {
-                if (!cancelled) {
-                    const msg = (err as Error).name === 'NotAllowedError'
-                        ? 'Camera permission denied — allow camera in browser settings'
-                        : 'Could not open camera'
-                    setError(msg)
-                    setStatus('error')
-                }
-                return
+            // Fire click on pinch START (not every frame)
+            if (gesture === 'pinch' && prevGesture.current !== 'pinch') {
+              fireClick(cx, cy)
             }
 
-            // 3. Start detection loop
-            setStatus('ready')
+            // Update React state only on gesture change
+            if (gesture !== prevGesture.current) {
+              prevGesture.current = gesture
+              setState(s => ({ ...s, gesture, isActive: true, landmarks: hands }))
 
-            function detect() {
-                if (cancelled) return
-
-                const video  = videoRef.current
-                const canvas = canvasRef.current
-
-                if (!video || !canvas || !landmarker || video.readyState < 2) {
-                    rafHandle = requestAnimationFrame(detect)
-                    return
-                }
-
-                const now    = performance.now()
-                const result: HandLandmarkerResult = landmarker.detectForVideo(video, now)
-
-                // Draw skeleton on overlay canvas
-                const ctx = canvas.getContext('2d')
-                if (ctx) {
-                    canvas.width  = video.videoWidth
-                    canvas.height = video.videoHeight
-                    ctx.clearRect(0, 0, canvas.width, canvas.height)
-                    if (result.landmarks.length > 0) {
-                        drawLandmarks(ctx, result.landmarks[0], canvas.width, canvas.height)
-                    }
-                }
-
-                // ─── No hand ─────────────────────────────────────────────
-                if (result.landmarks.length === 0) {
-                    setHandVisible(false)
-                    setIsPinching(false)
-                    setIsGrabbing(false)
-                    wristHistory.current = []
-                    if (currentGestureRef.current !== 'none') {
-                        currentGestureRef.current = 'none'
-                        setCurrentGesture('none')
-                        setGesture('none')
-                        updateSensor('gesture', 'READY', 'ready')
-                    }
-                    setHandCursor({
-                        screenX: smoothPos.current.x,
-                        screenY: smoothPos.current.y,
-                        visible: false,
-                        isPinching: false,
-                        isGrabbing: false,
-                    })
-                } else {
-                    // ─── Hand detected ───────────────────────────────────
-                    setHandVisible(true)
-                    const landmarks = result.landmarks[0]
-                    const wristX    = landmarks[WRIST].x
-
-                    // ── Position: index finger tip → screen coordinates ──
-                    const indexTip = landmarks[INDEX_TIP]
-                    // MediaPipe x is 0(left)→1(right) but camera is mirrored
-                    const sens = sensitivityRef.current
-
-                    // Center-based mapping: 0.5 is center of camera
-                    // Multiply offset from center by sensitivity
-                    const rawX = 0.5 + (0.5 - indexTip.x) * sens
-                    const rawY = 0.5 + (indexTip.y - 0.5) * sens
-
-                    const targetX = Math.max(0, Math.min(1, rawX)) * window.innerWidth
-                    const targetY = Math.max(0, Math.min(1, rawY)) * window.innerHeight
-
-                    // Smooth with lerp
-                    smoothPos.current.x = lerp(smoothPos.current.x, targetX, LERP_FACTOR)
-                    smoothPos.current.y = lerp(smoothPos.current.y, targetY, LERP_FACTOR)
-
-                    setHandPosition({
-                        x: smoothPos.current.x,
-                        y: smoothPos.current.y,
-                    })
-
-                    // ── Pinch detection: thumb tip ↔ index tip ───────────
-                    const pinchDist = dist2D(landmarks[THUMB_TIP], landmarks[INDEX_TIP])
-                    const pinching = pinchDist < PINCH_THRESHOLD
-                    setIsPinching(pinching)
-
-                    // ── Grab detection (fist) ────────────────────────────
-                    const shape = classifyHandShape(landmarks)
-                    const grabbing = shape === 'grab'
-                    setIsGrabbing(grabbing)
-
-                    // ── Push to store for cursor overlay + click handler ─
-                    setHandCursor({
-                        screenX: smoothPos.current.x,
-                        screenY: smoothPos.current.y,
-                        visible: true,
-                        isPinching: pinching,
-                        isGrabbing: grabbing,
-                    })
-
-                    // ── Gesture classification (swipes + shapes) ─────────
-                    wristHistory.current.push(wristX)
-                    if (wristHistory.current.length > VELOCITY_HISTORY) {
-                        wristHistory.current.shift()
-                    }
-
-                    if (cooldown.current > 0) {
-                        cooldown.current--
-                    } else if (wristHistory.current.length >= VELOCITY_HISTORY) {
-                        const delta = wristHistory.current[0] - wristHistory.current[wristHistory.current.length - 1]
-
-                        let detected: HandGesture = 'none'
-                        if (delta > SWIPE_THRESHOLD)       detected = 'swipe_right'
-                        else if (delta < -SWIPE_THRESHOLD) detected = 'swipe_left'
-                        else                               detected = shape
-
-                        if (detected !== 'none' && detected !== currentGestureRef.current) {
-                            currentGestureRef.current = detected
-                            setCurrentGesture(detected)
-
-                            const storeGesture = detected === 'grab' ? 'push' : detected
-                            setGesture(storeGesture as Parameters<typeof setGesture>[0])
-
-                            const label = detected.replace('_', ' ').toUpperCase()
-                            updateSensor('gesture', label, 'active')
-                            console.log(`✋ Hand gesture: ${detected}`)
-                            cooldown.current = GESTURE_COOLDOWN_FRAMES
-                        }
-                    }
-                }
-
-                rafHandle = requestAnimationFrame(detect)
+              // ── Bridge to global store ──────────────────────────────────
+              // Map MediaPipe gestures to store gesture vocabulary
+              const storeGesture: Parameters<typeof setStoreGesture>[0] =
+                gesture === 'open'  ? 'hover'      :
+                gesture === 'pinch' ? 'push'        :
+                gesture === 'fist'  ? 'pull'        :
+                'none'
+              setStoreGesture(storeGesture)
+              updateSensor('gesture', gesture.toUpperCase(), 'active')
+              updateSensor('camera',  'ON', 'active')
+              // ────────────────────────────────────────────────────────────
+            } else {
+              // Keep landmarks updated every frame even when gesture unchanged
+              setState(s => ({ ...s, isActive: true, landmarks: hands }))
             }
+          } else {
+            onCursorMove.current(0, 0, false)
+            if (prevGesture.current !== 'none') {
+              prevGesture.current = 'none'
+              setState(s => ({ ...s, gesture: 'none', isActive: false, landmarks: [] }))
 
-            rafHandle = requestAnimationFrame(detect)
+              // ── Bridge to global store: hand lost ──────────────────────
+              setStoreGesture('none')
+              updateSensor('gesture', 'READY', 'ready')
+              // ────────────────────────────────────────────────────────────
+            } else {
+              setState(s => ({ ...s, landmarks: [] }))
+            }
+          }
+
+          rafId.current = requestAnimationFrame(loop)
         }
 
-        start()
-
-        return () => {
-            cancelled = true
-            cancelAnimationFrame(rafHandle)
-            stream?.getTracks().forEach(t => t.stop())
-            landmarker?.close()
-            setStatus('loading')
-            setHandVisible(false)
-            setCurrentGesture('none')
-            setIsPinching(false)
-            setIsGrabbing(false)
-            currentGestureRef.current = 'none'
-            setHandCursor({ screenX: 0, screenY: 0, visible: false, isPinching: false, isGrabbing: false })
-        }
-    }, [enabled, setGesture, updateSensor, setHandCursor])
-
-    return {
-        videoRef,
-        canvasRef,
-        status,
-        error,
-        currentGesture,
-        handVisible,
-        handPosition,
-        isPinching,
-        isGrabbing,
+        rafId.current = requestAnimationFrame(loop)
+      } catch (err) {
+        console.error('[HandTracking] Failed to start:', err)
+        setState(s => ({ ...s, isTracking: false }))
+      }
     }
-}
 
-// ─── Canvas Drawing ──────────────────────────────────────────────────────────
+    run()
 
-const CONNECTIONS = [
-    [0,1],[1,2],[2,3],[3,4],
-    [0,5],[5,6],[6,7],[7,8],
-    [0,9],[9,10],[10,11],[11,12],
-    [0,13],[13,14],[14,15],[15,16],
-    [0,17],[17,18],[18,19],[19,20],
-    [5,9],[9,13],[13,17],
-]
-
-function drawLandmarks(
-    ctx: CanvasRenderingContext2D,
-    landmarks: { x: number; y: number; z: number }[],
-    w: number,
-    h: number
-) {
-    ctx.strokeStyle = 'rgba(0, 212, 255, 0.7)'
-    ctx.lineWidth   = 2
-    for (const [a, b] of CONNECTIONS) {
-        ctx.beginPath()
-        ctx.moveTo(landmarks[a].x * w, landmarks[a].y * h)
-        ctx.lineTo(landmarks[b].x * w, landmarks[b].y * h)
-        ctx.stroke()
+    return () => {
+      alive = false
+      cancelAnimationFrame(rafId.current)
+      stream?.getTracks().forEach(t => t.stop())
+      if (videoRef.current) videoRef.current.srcObject = null
+      setState({ gesture: 'none', isActive: false, isTracking: false, landmarks: [] })
+      setStoreGesture('none')
+      updateSensor('gesture', 'READY', 'ready')
     }
-    for (const lm of landmarks) {
-        ctx.beginPath()
-        ctx.arc(lm.x * w, lm.y * h, 4, 0, Math.PI * 2)
-        ctx.fillStyle = '#FFD700'
-        ctx.fill()
-    }
+  }, [enabled]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return { state, videoRef, onCursorMove }
 }
