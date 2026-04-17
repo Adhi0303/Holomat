@@ -9,7 +9,6 @@ import { useAppStore } from '../stores/appStore'
 // Tracks hand position delta and applies it as rotation to the camera orbit.
 
 function HandOrbitControls() {
-    const { handCursor } = useAppStore()
     const controlsRef = useRef<any>(null)
     const lastHandPos = useRef<{ x: number; y: number } | null>(null)
     const { camera } = useThree()
@@ -20,6 +19,9 @@ function HandOrbitControls() {
     useFrame(() => {
         if (!controlsRef.current) return
 
+        // Always get the freshest state without triggering React re-renders
+        const handCursor = useAppStore.getState().handCursor
+
         if (handCursor.isGrabbing && handCursor.visible) {
             // Disable mouse orbit while hand is grabbing
             controlsRef.current.enabled = false
@@ -28,23 +30,26 @@ function HandOrbitControls() {
                 const dx = handCursor.screenX - lastHandPos.current.x
                 const dy = handCursor.screenY - lastHandPos.current.y
 
-                // Apply delta as rotation (invert X for natural feel)
-                controlsRef.current.minAzimuthAngle = -Infinity
-                controlsRef.current.maxAzimuthAngle = Infinity
+                // Only apply if there's actual significant movement
+                if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+                    // Apply delta as rotation (invert X for natural feel)
+                    controlsRef.current.minAzimuthAngle = -Infinity
+                    controlsRef.current.maxAzimuthAngle = Infinity
 
-                // Manually rotate by adjusting the spherical target
-                const spherical = new THREE.Spherical().setFromVector3(
-                    camera.position.clone().sub(controlsRef.current.target)
-                )
-                spherical.theta -= dx * rotSpeed
-                spherical.phi   -= dy * rotSpeed
+                    // Manually rotate by adjusting the spherical target
+                    const spherical = new THREE.Spherical().setFromVector3(
+                        camera.position.clone().sub(controlsRef.current.target)
+                    )
+                    spherical.theta -= dx * rotSpeed
+                    spherical.phi   -= dy * rotSpeed
 
-                // Clamp polar angle
-                spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi))
+                    // Clamp polar angle
+                    spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi))
 
-                const newPos = new THREE.Vector3().setFromSpherical(spherical).add(controlsRef.current.target)
-                camera.position.copy(newPos)
-                camera.lookAt(controlsRef.current.target)
+                    const newPos = new THREE.Vector3().setFromSpherical(spherical).add(controlsRef.current.target)
+                    camera.position.copy(newPos)
+                    camera.lookAt(controlsRef.current.target)
+                }
             }
 
             lastHandPos.current = { x: handCursor.screenX, y: handCursor.screenY }
